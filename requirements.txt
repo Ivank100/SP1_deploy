@@ -1,0 +1,5 @@
+python-dotenv
+psycopg[binary]
+pymupdf
+requests
+sentence-transformers
