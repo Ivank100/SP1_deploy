@@ -3,3 +3,13 @@ psycopg[binary]
 pymupdf
 requests
 sentence-transformers
+scikit-learn
+python-pptx
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+email-validator
+openai-whisper
+fastapi
+uvicorn[standard]
+pydantic[email]

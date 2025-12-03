@@ -7,6 +7,18 @@ class DeepSeekClient:
     def __init__(self, api_key: str | None = None, base_url: str | None = None):
         self.api_key = api_key or DEEPSEEK_API_KEY
         self.base_url = base_url or DEEPSEEK_BASE_URL
+        
+        if not self.api_key:
+            raise ValueError(
+                "DEEPSEEK_API_KEY is not set. Please set it in your .env file or environment.\n"
+                "Example: DEEPSEEK_API_KEY=your_api_key_here"
+            )
+        if not self.base_url:
+            raise ValueError(
+                "DEEPSEEK_BASE_URL is not set. Please set it in your .env file or environment.\n"
+                "Example: DEEPSEEK_BASE_URL=https://openrouter.ai/api/v1"
+            )
+        
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {self.api_key}",

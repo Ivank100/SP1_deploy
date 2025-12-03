@@ -12,6 +12,11 @@ venv/
 .env/
 .venv/
 
+# Environment variables - IMPORTANT: Never commit .env files!
+.env
+.env.local
+.env.*.local
+
 # Editor stuff
 .vscode/
 .idea/
@@ -20,6 +25,10 @@ venv/
 data/
 uploads/
 *.pdf
+*.mp3
+*.wav
+*.pptx
+*.ppt
 
 # OS
 .DS_Store

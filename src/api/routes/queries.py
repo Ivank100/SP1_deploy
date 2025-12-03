@@ -1,0 +1,120 @@
+# src/api/routes/queries.py
+from fastapi import APIRouter, HTTPException, status, Depends
+
+from ...db import get_lecture, get_conn, can_user_access_lecture
+from ...rag_query import answer_question
+from ..middleware.auth import get_current_user
+from ..models import (
+    QueryRequest,
+    QueryResponse,
+    QueryHistoryItem,
+    QueryHistoryResponse,
+    ErrorResponse
+)
+
+router = APIRouter(prefix="/api/lectures", tags=["queries"])
+
+@router.post("/{lecture_id}/query", response_model=QueryResponse)
+async def query_lecture(
+    lecture_id: int,
+    request: QueryRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Ask a question about a specific lecture.
+    
+    Returns answer with citations.
+    """
+    # Verify lecture exists
+    lecture = get_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Lecture with id {lecture_id} not found"
+        )
+    
+    # Check access
+    if not can_user_access_lecture(current_user["id"], lecture_id, current_user["role"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this lecture",
+        )
+    
+    # Check if lecture is ready
+    if lecture[4] != "completed":  # status
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Lecture is not ready. Current status: {lecture[4]}"
+        )
+    
+    # Get answer with citation
+    course_id = lecture[6]
+    answer, citation, sources = answer_question(
+        question=request.question,
+        lecture_id=lecture_id,
+        course_id=course_id,
+        top_k=request.top_k,
+        user_id=current_user["id"]
+    )
+    
+    return QueryResponse(
+        answer=answer,
+        citation=citation,
+        lecture_id=lecture_id,
+        course_id=course_id,
+        sources=sources,
+    )
+
+@router.get("/{lecture_id}/history", response_model=QueryHistoryResponse)
+async def get_query_history_for_lecture(
+    lecture_id: int,
+    limit: int = 20,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get query history for a specific lecture.
+    """
+    # Verify lecture exists
+    lecture = get_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Lecture with id {lecture_id} not found"
+        )
+    
+    # Check access
+    if not can_user_access_lecture(current_user["id"], lecture_id, current_user["role"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this lecture",
+        )
+    
+    # Query directly from DB with lecture_id filter
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, question, answer, created_at
+            FROM query_history
+            WHERE lecture_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (lecture_id, limit),
+        )
+        history_items = cur.fetchall()
+    
+    query_items = [
+        QueryHistoryItem(
+            id=item[0],
+            question=item[1],
+            answer=item[2],
+            created_at=item[3]
+        )
+        for item in history_items
+    ]
+    
+    return QueryHistoryResponse(
+        queries=query_items,
+        total=len(query_items)
+    )
+
