@@ -4,12 +4,47 @@ import psycopg
 import psycopg.errors
 from typing import List, Tuple, Optional, Any, Dict
 from .config import PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS, PG_DIM
+import random
+import string
 
 FILE_TYPES = ("pdf", "audio", "slides")
 
 DEFAULT_COURSE_NAME = "General Course"
 DEFAULT_COURSE_DESCRIPTION = "Default course for uncategorized lectures"
 
+def generate_join_code(length=6):
+    """Generates a random uppercase alphanumeric code."""
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+def add_user_to_course(user_id: int, course_id: int, role: str = 'student') -> None:
+    """Links a user to a course. Used by auth and instructor tools."""
+    init_schema()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_courses (user_id, course_id, role)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id, course_id) DO NOTHING
+                """,
+                (user_id, course_id, role)
+            )
+            conn.commit()
+
+def enroll_student_by_code(user_id: int, join_code: str) -> int:
+    """Links a student to a course using the unique join code."""
+    init_schema()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM courses WHERE UPPER(join_code) = %s", 
+                (join_code.strip().upper(),)
+            )
+            course = cur.fetchone()
+            if not course:
+                raise ValueError("Invalid join code.")
+            course_id = course[0]
+            add_user_to_course(user_id, course_id, 'student')
+            return course_id
 def get_conn():
     return psycopg.connect(
         host=PG_HOST,
@@ -73,6 +108,7 @@ def init_schema():
                 id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
                 description TEXT,
+                join_code TEXT UNIQUE, -- Add this line
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_by INT REFERENCES users(id) ON DELETE SET NULL
             );
@@ -100,7 +136,7 @@ def init_schema():
             ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'student';
         """)
         
-        # Create course_instructors table for admin-assigned instructors
+        # Create course_instructors table for instructor assignments
         cur.execute("""
             CREATE TABLE IF NOT EXISTS course_instructors (
                 course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
@@ -145,6 +181,11 @@ def init_schema():
         cur.execute("""
             ALTER TABLE courses
             ADD COLUMN IF NOT EXISTS created_by INT REFERENCES users(id) ON DELETE SET NULL;
+        """)
+        # --- ADD THE NEW JOIN CODE MIGRATION HERE ---
+        cur.execute("""
+            ALTER TABLE courses
+            ADD COLUMN IF NOT EXISTS join_code TEXT UNIQUE;
         """)
 
         # Ensure lecture metadata columns exist for legacy databases
@@ -275,20 +316,158 @@ def init_schema():
             ON chunks (lecture_id);
         """)
 
-        # Flashcards table for study materials
+        # Flashcard sets table (stores generation runs)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS flashcard_sets (
+                id SERIAL PRIMARY KEY,
+                lecture_id INT NOT NULL REFERENCES lectures(id) ON DELETE CASCADE,
+                created_by_user_id INT REFERENCES users(id) ON DELETE SET NULL,
+                strategy TEXT NOT NULL DEFAULT 'keypoints_v1',
+                seed INT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS flashcard_sets_lecture_id_idx
+            ON flashcard_sets (lecture_id);
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS flashcard_sets_created_at_idx
+            ON flashcard_sets (created_at DESC);
+        """)
+        
+        # Flashcards table for study materials (updated schema)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS flashcards (
                 id SERIAL PRIMARY KEY,
+                flashcard_set_id INT REFERENCES flashcard_sets(id) ON DELETE CASCADE,
                 lecture_id INT NOT NULL REFERENCES lectures(id) ON DELETE CASCADE,
-                front TEXT NOT NULL,
-                back TEXT NOT NULL,
-                page_number INT
+                question TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                source_keypoint_id INT,
+                source_chunk_ids JSONB,
+                quality_score FLOAT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
         cur.execute("""
             CREATE INDEX IF NOT EXISTS flashcards_lecture_id_idx
             ON flashcards (lecture_id);
         """)
+        
+        # Only create flashcard_set_id index if column exists
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT 1 
+                FROM information_schema.columns 
+                WHERE table_name = 'flashcards' 
+                AND column_name = 'flashcard_set_id'
+            );
+        """)
+        has_flashcard_set_id = cur.fetchone()[0]
+        if has_flashcard_set_id:
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS flashcards_flashcard_set_id_idx
+                ON flashcards (flashcard_set_id);
+            """)
+        
+        # Migrate existing flashcards to new schema if needed
+        # Check if old columns exist and migrate
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT 1 
+                FROM information_schema.columns 
+                WHERE table_name = 'flashcards' 
+                AND column_name = 'front'
+            );
+        """)
+        has_old_schema = cur.fetchone()[0]
+        
+        # Check if new columns exist
+        cur.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'flashcards' 
+            AND column_name IN ('question', 'flashcard_set_id')
+        """)
+        existing_cols = {row[0] for row in cur.fetchall()}
+        has_new_schema = 'question' in existing_cols and 'flashcard_set_id' in existing_cols
+        
+        # Only migrate if old schema exists and new schema doesn't
+        if has_old_schema and not has_new_schema:
+            # Add new columns first (without foreign key constraint initially)
+            try:
+                cur.execute("""
+                    ALTER TABLE flashcards 
+                    ADD COLUMN IF NOT EXISTS question TEXT,
+                    ADD COLUMN IF NOT EXISTS answer TEXT,
+                    ADD COLUMN IF NOT EXISTS flashcard_set_id INT,
+                    ADD COLUMN IF NOT EXISTS source_keypoint_id INT,
+                    ADD COLUMN IF NOT EXISTS source_chunk_ids JSONB,
+                    ADD COLUMN IF NOT EXISTS quality_score FLOAT,
+                    ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+                """)
+            except Exception as e:
+                print(f"[WARN] Error adding new columns: {e}")
+            
+            # Create default sets for existing flashcards first (before FK constraint)
+            try:
+                cur.execute("""
+                    INSERT INTO flashcard_sets (lecture_id, strategy)
+                    SELECT DISTINCT lecture_id, 'migrated_v1'
+                    FROM flashcards
+                    WHERE lecture_id NOT IN (
+                        SELECT DISTINCT lecture_id FROM flashcard_sets
+                    )
+                    RETURNING id, lecture_id;
+                """)
+                migrated_sets = cur.fetchall()
+                set_map = {lecture_id: set_id for set_id, lecture_id in migrated_sets}
+            except Exception as e:
+                print(f"[WARN] Error creating flashcard sets: {e}")
+                set_map = {}
+            
+            # Migrate data from old columns to new columns
+            try:
+                cur.execute("""
+                    SELECT id, lecture_id, front, back 
+                    FROM flashcards
+                    WHERE (question IS NULL OR answer IS NULL) AND front IS NOT NULL
+                """)
+                for card_id, lecture_id, front, back in cur.fetchall():
+                    set_id = set_map.get(lecture_id)
+                    if set_id and front and back:
+                        try:
+                            cur.execute("""
+                                UPDATE flashcards 
+                                SET question = %s, answer = %s, flashcard_set_id = %s
+                                WHERE id = %s
+                            """, (front, back, set_id, card_id))
+                        except Exception as e:
+                            print(f"[WARN] Error migrating flashcard {card_id}: {e}")
+            except Exception as e:
+                print(f"[WARN] Error during data migration: {e}")
+            
+            # Add foreign key constraint after data is migrated
+            try:
+                cur.execute("""
+                    DO $$ 
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.table_constraints 
+                            WHERE constraint_name = 'flashcards_flashcard_set_id_fkey'
+                            AND table_name = 'flashcards'
+                        ) THEN
+                            ALTER TABLE flashcards 
+                            ADD CONSTRAINT flashcards_flashcard_set_id_fkey 
+                            FOREIGN KEY (flashcard_set_id) REFERENCES flashcard_sets(id) ON DELETE CASCADE;
+                        END IF;
+                    END $$;
+                """)
+            except Exception as e:
+                print(f"[WARN] Note: Foreign key constraint may already exist or failed: {e}")
+            
+            print("[INFO] Attempted migration of flashcards to new schema")
         
         # Create or update query_history table (v1)
         cur.execute("""
@@ -466,16 +645,18 @@ def update_lecture_status(lecture_id: int, status: str):
 
 
 def create_course(name: str, description: Optional[str] = None, created_by: Optional[int] = None) -> int:
-    """Create a new course."""
+    """Create a new course with a unique randomized join code."""
     init_schema()
+    join_code = generate_join_code()
+    
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO courses (name, description, created_by)
-            VALUES (%s, %s, %s)
+            INSERT INTO courses (name, description, created_by, join_code)
+            VALUES (%s, %s, %s, %s)
             RETURNING id
-            """,
-            (name, description, created_by),
+        """,
+            (name, description, created_by, join_code),
         )
         course_id = cur.fetchone()[0]
         conn.commit()
@@ -483,39 +664,30 @@ def create_course(name: str, description: Optional[str] = None, created_by: Opti
 
 
 def list_courses():
-    """List all courses."""
+    """List all courses with their join codes."""
     init_schema()
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, name, description, created_at
+            SELECT id, name, description, created_at, join_code
             FROM courses
             ORDER BY created_at DESC
             """
         )
         return cur.fetchall()
 
-
 def get_course(course_id: int):
-    """Get a single course."""
+    """Get a single course including the join code."""
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, name, description, created_at
+            SELECT id, name, description, created_at, join_code
             FROM courses
             WHERE id = %s
             """,
             (course_id,),
         )
         return cur.fetchone()
-
-
-def delete_course(course_id: int):
-    """Delete a course and cascade delete lectures."""
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute("DELETE FROM courses WHERE id = %s", (course_id,))
-        conn.commit()
-
 
 def get_chunks_for_lecture(
     lecture_id: int, limit: Optional[int] = None
@@ -603,33 +775,185 @@ def get_lecture_study_materials(lecture_id: int):
 
 
 def list_flashcards(lecture_id: int):
-    """Return stored flashcards for a lecture."""
+    """Return stored flashcards for a lecture (legacy compatibility - returns latest set)."""
     with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, front, back, page_number
-            FROM flashcards
-            WHERE lecture_id = %s
-            ORDER BY id
-            """,
-            (lecture_id,),
-        )
+        # Try new schema first
+        cur.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'flashcards' 
+            AND column_name = 'question'
+        """)
+        has_new_schema = bool(cur.fetchone())
+        
+        if has_new_schema:
+            cur.execute(
+                """
+                SELECT f.id, f.question, f.answer, NULL as page_number
+                FROM flashcards f
+                WHERE f.lecture_id = %s
+                ORDER BY f.created_at DESC
+                LIMIT 100
+                """,
+                (lecture_id,),
+            )
+        else:
+            # Old schema fallback
+            cur.execute(
+                """
+                SELECT id, front, back, page_number
+                FROM flashcards
+                WHERE lecture_id = %s
+                ORDER BY id
+                """,
+                (lecture_id,),
+            )
         return cur.fetchall()
 
 
 def replace_flashcards(lecture_id: int, cards: List[Tuple[str, str, Optional[int]]]):
-    """Replace all flashcards for a lecture."""
+    """Replace all flashcards for a lecture (legacy function - creates a new set)."""
     with get_conn() as conn, conn.cursor() as cur:
-        cur.execute("DELETE FROM flashcards WHERE lecture_id = %s", (lecture_id,))
-        for front, back, page in cards:
+        # Create a new set
+        cur.execute("""
+            INSERT INTO flashcard_sets (lecture_id, strategy)
+            VALUES (%s, 'legacy_v1')
+            RETURNING id
+        """, (lecture_id,))
+        set_row = cur.fetchone()
+        set_id = set_row[0] if set_row else None
+        
+        # Delete old flashcards for this lecture (if using old schema)
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'flashcards' AND column_name = 'front'")
+        has_old = bool(cur.fetchone())
+        
+        if has_old:
+            cur.execute("DELETE FROM flashcards WHERE lecture_id = %s", (lecture_id,))
+            for front, back, page in cards:
+                cur.execute(
+                    """
+                    INSERT INTO flashcards (lecture_id, front, back, page_number)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (lecture_id, front, back, page),
+                )
+        else:
+            # New schema
+            cur.execute("DELETE FROM flashcards WHERE lecture_id = %s", (lecture_id,))
+            for front, back, _ in cards:
+                cur.execute(
+                    """
+                    INSERT INTO flashcards (lecture_id, flashcard_set_id, question, answer)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (lecture_id, set_id, front, back),
+                )
+        conn.commit()
+
+
+def create_flashcard_set(
+    lecture_id: int,
+    strategy: str = "keypoints_v1",
+    created_by_user_id: Optional[int] = None,
+    seed: Optional[int] = None,
+) -> int:
+    """Create a new flashcard set and return its ID."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO flashcard_sets (lecture_id, created_by_user_id, strategy, seed)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+            """,
+            (lecture_id, created_by_user_id, strategy, seed),
+        )
+        set_id = cur.fetchone()[0]
+        conn.commit()
+        return set_id
+
+
+def insert_flashcards(
+    flashcard_set_id: int,
+    lecture_id: int,
+    flashcards: List[Dict[str, Any]],
+):
+    """Insert flashcards for a set."""
+    with get_conn() as conn, conn.cursor() as cur:
+        for card in flashcards:
             cur.execute(
                 """
-                INSERT INTO flashcards (lecture_id, front, back, page_number)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO flashcards (
+                    flashcard_set_id, lecture_id, question, answer,
+                    source_keypoint_id, source_chunk_ids, quality_score
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (lecture_id, front, back, page),
+                (
+                    flashcard_set_id,
+                    lecture_id,
+                    card.get("question"),
+                    card.get("answer"),
+                    card.get("source_keypoint_id"),
+                    json.dumps(card.get("source_chunk_ids")) if card.get("source_chunk_ids") else None,
+                    card.get("quality_score"),
+                ),
             )
         conn.commit()
+
+
+def get_latest_flashcard_set(lecture_id: int) -> Optional[Tuple[int, str, Optional[int]]]:
+    """Get the latest flashcard set for a lecture. Returns (set_id, strategy, created_by_user_id) or None."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, strategy, created_by_user_id
+            FROM flashcard_sets
+            WHERE lecture_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (lecture_id,))
+        row = cur.fetchone()
+        return row if row else None
+
+
+def get_flashcard_set_by_id(set_id: int) -> Optional[Tuple[int, int, str, Optional[int]]]:
+    """Get flashcard set by ID. Returns (id, lecture_id, strategy, created_by_user_id) or None."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, lecture_id, strategy, created_by_user_id
+            FROM flashcard_sets
+            WHERE id = %s
+        """, (set_id,))
+        return cur.fetchone()
+
+
+def list_flashcards_by_set(set_id: int) -> List[Tuple[int, str, str, Optional[int], Optional[float]]]:
+    """Get flashcards for a specific set. Returns (id, question, answer, source_keypoint_id, quality_score)."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, question, answer, source_keypoint_id, quality_score
+            FROM flashcards
+            WHERE flashcard_set_id = %s
+            ORDER BY quality_score DESC NULLS LAST, id
+        """, (set_id,))
+        return cur.fetchall()
+
+
+def get_previous_flashcard_questions(lecture_id: int, limit_sets: int = 3) -> List[str]:
+    """Get questions from previous flashcard sets for deduplication."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+            SELECT DISTINCT f.question
+            FROM flashcards f
+            JOIN flashcard_sets fs ON f.flashcard_set_id = fs.id
+            WHERE fs.lecture_id = %s
+            AND fs.id IN (
+                SELECT id FROM flashcard_sets
+                WHERE lecture_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s
+            )
+        """, (lecture_id, lecture_id, limit_sets))
+        return [row[0] for row in cur.fetchall()]
 
 
 def clear_chunks_for_lecture(lecture_id: int):
@@ -874,23 +1198,56 @@ def get_user_by_id(user_id: int):
         return cur.fetchone()
 
 
-def add_user_to_course(user_id: int, course_id: int):
-    """Add a user to a course (many-to-many relationship)."""
+def get_user_courses(user_id: int) -> List[Dict[str, Any]]:
+    """Retrieve all courses a user is enrolled in, including the join_code."""
+    init_schema()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT c.id, c.name, c.description, c.created_at, c.join_code,
+                       (SELECT COUNT(*) FROM lectures WHERE course_id = c.id) as lecture_count
+                FROM courses c
+                JOIN user_courses uc ON c.id = uc.course_id
+                WHERE uc.user_id = %s
+                ORDER BY c.created_at DESC
+                """,
+                (user_id,),
+            )
+            rows = cur.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "name": r[1],
+                    "description": r[2],
+                    "created_at": r[3].isoformat() if r[3] else None,
+                    "join_code": r[4], # Make sure this is index 4
+                    "lecture_count": r[5],
+                }
+                for r in rows
+            ]
+
+
+def assign_instructor_to_course(course_id: int, instructor_id: int, assigned_by: int):
+    """Assign an instructor to a course."""
     init_schema()
     with get_conn() as conn, conn.cursor() as cur:
         try:
             cur.execute(
                 """
-                INSERT INTO user_courses (user_id, course_id)
-                VALUES (%s, %s)
-                ON CONFLICT (user_id, course_id) DO NOTHING
+                INSERT INTO course_instructors (course_id, instructor_id, assigned_by)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (course_id, instructor_id) DO NOTHING
+                RETURNING assigned_at
                 """,
-                (user_id, course_id),
+                (course_id, instructor_id, assigned_by),
             )
+            result = cur.fetchone()
             conn.commit()
-        except psycopg.errors.IntegrityError:
+            return result[0] if result else None
+        except Exception as e:
             conn.rollback()
-            raise ValueError("User-course relationship already exists")
+            raise ValueError(f"Failed to assign instructor: {str(e)}")
 
 
 def get_user_courses(user_id: int) -> List[int]:
@@ -911,17 +1268,24 @@ def get_user_courses(user_id: int) -> List[int]:
 def can_user_access_course(user_id: int, course_id: int, user_role: str) -> bool:
     """
     Check if a user can access a course.
-    - Admins can access all courses
-    - Instructors can access courses they're assigned to (via course_instructors) or all if no assignments
+    - Instructors can access courses they created or are assigned to (via course_instructors) or all if no assignments
     - Students can only access courses they're enrolled in
     """
-    if user_role == "admin":
-        return True
-    
     if user_role == "instructor":
-        # Check if instructor is assigned to this course
         init_schema()
         with get_conn() as conn, conn.cursor() as cur:
+            # Check if instructor created the course
+            cur.execute(
+                """
+                SELECT created_by FROM courses WHERE id = %s
+                """,
+                (course_id,),
+            )
+            course_row = cur.fetchone()
+            if course_row and course_row[0] == user_id:
+                return True
+            
+            # Check if instructor is assigned to this course
             cur.execute(
                 """
                 SELECT COUNT(*) FROM course_instructors
@@ -950,10 +1314,10 @@ def can_user_access_course(user_id: int, course_id: int, user_role: str) -> bool
 def can_user_access_lecture(user_id: int, lecture_id: int, user_role: str) -> bool:
     """
     Check if a user can access a lecture.
-    - Admins and instructors can access all lectures
+    - Instructors can access all lectures
     - Students can only access lectures in courses they're enrolled in
     """
-    if user_role in ("admin", "instructor"):
+    if user_role == "instructor":
         return True
     
     lecture = get_lecture(lecture_id)
@@ -965,3 +1329,86 @@ def can_user_access_lecture(user_id: int, lecture_id: int, user_role: str) -> bo
         return False
     
     return can_user_access_course(user_id, course_id, user_role)
+
+def is_instructor_for_course(user_id: int, course_id: int) -> bool:
+    """
+    Returns True if user is allowed to manage this course as an instructor.
+    Accepts either:
+    - user is the course creator (courses.created_by)
+    - user is in course_instructors for that course
+    """
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        # creator check
+        cur.execute("SELECT created_by FROM courses WHERE id = %s", (course_id,))
+        row = cur.fetchone()
+        if not row:
+            return False  # course doesn't exist
+        created_by = row[0]
+        if created_by is not None and created_by == user_id:
+            return True
+
+        # assignment check
+        cur.execute(
+            """
+            SELECT 1
+            FROM course_instructors
+            WHERE course_id = %s AND instructor_id = %s
+            LIMIT 1
+            """,
+            (course_id, user_id),
+        )
+        return cur.fetchone() is not None
+
+
+def delete_course_as_instructor(course_id: int, instructor_id: int) -> None:
+    init_schema()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # Check ownership
+            cur.execute("SELECT id FROM courses WHERE id = %s AND created_by = %s", (course_id, instructor_id))
+            if not cur.fetchone():
+                raise ValueError("Unauthorized or course not found")
+
+            # MANUALLY delete heavy data first to prevent the "Infinite Load"
+            cur.execute("DELETE FROM chunks WHERE lecture_id IN (SELECT id FROM lectures WHERE course_id = %s)", (course_id,))
+            cur.execute("DELETE FROM flashcards WHERE lecture_id IN (SELECT id FROM lectures WHERE course_id = %s)", (course_id,))
+            cur.execute("DELETE FROM lectures WHERE course_id = %s", (course_id,))
+            
+            # Now delete the course row
+            cur.execute("DELETE FROM user_courses WHERE course_id = %s", (course_id,))
+            cur.execute("DELETE FROM courses WHERE id = %s", (course_id,))
+            conn.commit()
+
+def enroll_student_by_code(user_id: int, join_code: str) -> int:
+    """Links a student to a course using the unique join code."""
+    init_schema()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # 1. Find the course by the code (case-insensitive)
+            cur.execute(
+                "SELECT id FROM courses WHERE UPPER(join_code) = %s", 
+                (join_code.strip().upper(),)
+            )
+            course = cur.fetchone()
+            
+            if not course:
+                raise ValueError("Invalid join code. Please check with your instructor.")
+            
+            course_id = course[0]
+            
+            # 2. Check if student is already enrolled to avoid duplicates
+            cur.execute(
+                "SELECT 1 FROM user_courses WHERE user_id = %s AND course_id = %s",
+                (user_id, course_id)
+            )
+            if cur.fetchone():
+                return course_id # Already enrolled, just return the ID
+            
+            # 3. Enroll the student
+            cur.execute(
+                "INSERT INTO user_courses (user_id, course_id, role) VALUES (%s, %s, 'student')",
+                (user_id, course_id)
+            )
+            conn.commit()
+            return course_id

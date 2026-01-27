@@ -214,8 +214,8 @@ async def delete_lecture_by_id(
             detail=f"Lecture with id {lecture_id} not found"
         )
     
-    # Check access - only allow deletion if user is the creator or admin/instructor
-    if current_user["role"] not in ("admin", "instructor"):
+    # Check access - only allow deletion if user is the creator or instructor
+    if current_user["role"] != "instructor":
         # Students can only delete their own lectures
         if lecture[9] != current_user["id"]:  # created_by is at index 9
             raise HTTPException(

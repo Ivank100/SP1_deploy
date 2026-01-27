@@ -2,67 +2,30 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiClient, Course, QueryResponse, CitationSource, User } from '@/lib/api';
-import FileUpload from '@/components/FileUpload';
-import LectureList from '@/components/LectureList';
+import { apiClient, Course, User } from '@/lib/api';
 import Link from 'next/link';
-
-const formatTimestamp = (seconds?: number | null) => {
-  if (seconds == null) return null;
-  const total = Math.max(Math.floor(seconds), 0);
-  const mins = Math.floor(total / 60);
-  const secs = total % 60;
-  const hours = Math.floor(mins / 60);
-  const minutes = mins % 60;
-  if (hours > 0) {
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs
-      .toString()
-      .padStart(2, '0')}`;
-  }
-  return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-};
-
-const describeSource = (source: CitationSource) => {
-  if (source.page_number != null) {
-    const isSlide = source.file_type === 'slides';
-    const label = isSlide ? 'slide' : 'page';
-    return `${label} ${source.page_number}`;
-  }
-  const start = formatTimestamp(source.timestamp_start ?? undefined);
-  const end = formatTimestamp(source.timestamp_end ?? undefined);
-  if (start && end && end !== start) {
-    return `${start}-${end}`;
-  }
-  if (start) {
-    return start;
-  }
-  return '';
-};
 
 export default function Home() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
-  const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [loadingCourses, setLoadingCourses] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [creatingCourse, setCreatingCourse] = useState(false);
   const [newCourseName, setNewCourseName] = useState('');
   const [newCourseDescription, setNewCourseDescription] = useState('');
-  const [courseQuestion, setCourseQuestion] = useState('');
-  const [courseAsking, setCourseAsking] = useState(false);
-  const [courseAnswer, setCourseAnswer] = useState<QueryResponse | null>(null);
   const [courseFormError, setCourseFormError] = useState<string | null>(null);
-  const [queryError, setQueryError] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  
+  // States for Join Course feature
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
 
   useEffect(() => {
-    // Check authentication
     if (!apiClient.isAuthenticated()) {
       router.push('/auth/login');
       return;
     }
 
-    // Load user info
     const storedUser = apiClient.getStoredUser();
     if (storedUser) {
       setUser(storedUser);
@@ -77,57 +40,34 @@ export default function Home() {
   }, [router]);
 
   const loadCourses = useCallback(async () => {
+    setLoadingCourses(true);
     try {
       const response = await apiClient.getCourses();
-      setCourses(response.courses);
-
-      if (response.courses.length === 0) {
-        setSelectedCourseId(null);
-      } else if (!selectedCourseId || !response.courses.find(c => c.id === selectedCourseId)) {
-        setSelectedCourseId(response.courses[0].id);
-      }
+      setCourses(response.courses || []);
     } catch (error) {
       console.error('Failed to load courses:', error);
+      setCourses([]);
     } finally {
       setLoadingCourses(false);
-      setRefreshing(false);
     }
-  }, [selectedCourseId]);
+  }, []);
 
   useEffect(() => {
     if (user) {
       loadCourses();
     }
-  }, [loadCourses, user]);
+  }, [user, loadCourses]);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const hasProcessing = courses.some(course =>
-        course.lectures.some(lecture => lecture.status === 'processing')
-      );
-      if (hasProcessing) {
-        loadCourses();
-      }
-    }, 4000);
-
-    return () => clearInterval(interval);
-  }, [courses, loadCourses]);
-
-  const selectedCourse = courses.find(course => course.id === selectedCourseId) || null;
-  const selectedLectures = selectedCourse?.lectures ?? [];
-
-  const handleUploadSuccess = () => {
-    setRefreshing(true);
-    loadCourses();
-  };
-
-  const handleDelete = async (id: number) => {
+  const handleJoinCourse = async (e: React.FormEvent) => {
+    e.preventDefault();
     try {
-      await apiClient.deleteLecture(id);
-      await loadCourses();
+      const response = await apiClient.joinCourse(joinCode);
+      setShowJoinModal(false);
+      setJoinCode('');
+      await loadCourses(); // Refresh the dashboard
+      router.push(`/courses/${response.course_id}`);
     } catch (error) {
-      console.error('Failed to delete lecture:', error);
-      alert('Failed to delete lecture');
+      alert("Invalid join code or you are already in this course.");
     }
   };
 
@@ -140,13 +80,15 @@ export default function Home() {
     setCreatingCourse(true);
     setCourseFormError(null);
     try {
-      await apiClient.createCourse({
+      const newCourse = await apiClient.createCourse({
         name: newCourseName.trim(),
         description: newCourseDescription.trim() || undefined,
       });
       setNewCourseName('');
       setNewCourseDescription('');
+      setShowCreateModal(false);
       await loadCourses();
+      router.push(`/courses/${newCourse.id}`);
     } catch (error) {
       console.error('Failed to create course:', error);
       setCourseFormError('Failed to create course. Please try again.');
@@ -155,48 +97,151 @@ export default function Home() {
     }
   };
 
-  const handleCourseQuery = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!selectedCourse || !courseQuestion.trim()) {
-      return;
-    }
-    setCourseAsking(true);
-    setQueryError(null);
-    setCourseAnswer(null);
-    try {
-      const response = await apiClient.queryCourse(selectedCourse.id, courseQuestion);
-      setCourseAnswer(response);
-      setCourseQuestion('');
-    } catch (error: any) {
-      console.error('Failed to query course:', error);
-      setQueryError(error.response?.data?.detail || 'Failed to get course answer.');
-    } finally {
-      setCourseAsking(false);
-    }
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
   };
 
-  const renderSources = (sources: QueryResponse['sources']) => {
-    if (!sources || sources.length === 0) return null;
+  // Course Card Component
+  function CourseCard({ course, createdDate }: { course: Course; createdDate: string }) {
+    const [healthStatus, setHealthStatus] = useState<'high' | 'healthy' | 'new' | null>(null);
+    const [loadingHealth, setLoadingHealth] = useState(true);
+
+    useEffect(() => {
+      if (user?.role === 'instructor') {
+        loadHealthStatus();
+      } else {
+        setLoadingHealth(false);
+      }
+    }, [course.id, user?.role]);
+
+    const loadHealthStatus = async () => {
+      try {
+        const analytics = await apiClient.getCourseAnalytics(course.id);
+        if (analytics.trend_direction === 'up' && analytics.trend_percentage > 15) {
+          setHealthStatus('high');
+        } else if (analytics.total_questions === 0) {
+          setHealthStatus('new');
+        } else {
+          setHealthStatus('healthy');
+        }
+      } catch (error) {
+        setHealthStatus('new');
+      } finally {
+        setLoadingHealth(false);
+      }
+    };
+
+    const handleDelete = async (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      if (window.confirm(`Permanently delete "${course.name}"?`)) {
+        try {
+          await apiClient.deleteCourse(course.id);
+          window.location.href = "/"; 
+        } catch (error) {
+          console.error("Delete failed:", error);
+          alert("Could not delete. If the page hangs, restart the backend server.");
+        }
+      }
+    };
+
     return (
-      <div className="mt-4">
-        <p className="text-sm font-semibold text-gray-900 mb-2">Sources</p>
-        <div className="space-y-1">
-          {sources.map((source, index) => (
-            <div key={`${source.lecture_id}-${index}`} className="text-sm text-gray-600">
-              <span className="font-medium text-primary-600">
-                {source.lecture_name || 'Lecture'}
+      <Link
+        href={`/courses/${course.id}`}
+        className="flex-shrink-0 w-80 h-96 bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer group relative"
+      >
+        {/* Delete Button */}
+        {user?.role === 'instructor' && (
+          <button
+            onClick={handleDelete}
+            className="absolute top-2 right-2 z-30 p-2 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-600 focus:outline-none"
+            title="Delete Course"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        )}
+
+        {/* Health Badge */}
+        {user?.role === 'instructor' && !loadingHealth && healthStatus && (
+          <div className="absolute top-4 left-4 z-10">
+            {healthStatus === 'high' && (
+              <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full border border-red-200">
+                ⚠️ High confusion
               </span>
-              {describeSource(source) && `, ${describeSource(source)}`}
+            )}
+            {healthStatus === 'healthy' && (
+              <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full border border-green-200">
+                🟢 Healthy
+              </span>
+            )}
+            {healthStatus === 'new' && (
+              <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full border border-blue-200">
+                New activity
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Course Card Header */}
+        <div className="h-32 bg-gradient-to-br from-primary-500 to-primary-700 relative overflow-hidden">
+          <div className="absolute inset-0 bg-black opacity-10"></div>
+          <div className="absolute bottom-4 left-4 group-hover:opacity-0 transition-opacity">
+            <div className="w-10 h-10 bg-white bg-opacity-20 rounded-lg flex items-center justify-center backdrop-blur-sm">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
             </div>
-          ))}
+          </div>
         </div>
-      </div>
+
+        {/* Course Card Content */}
+        <div className="p-6 h-64 flex flex-col">
+          <div className="flex-1">
+            <h3 className="text-xl font-semibold text-gray-900 mb-2 line-clamp-2 group-hover:text-primary-600 transition-colors">
+              {course.name}
+            </h3>
+            
+            {/* Show Join Code to Instructors */}
+            {user?.role === 'instructor' && (
+              <div className="mb-2 flex items-center space-x-1">
+                <span className="text-[10px] uppercase font-bold text-gray-400">Join Code:</span>
+                <code className="text-xs font-mono font-bold bg-gray-50 text-primary-700 px-1.5 py-0.5 rounded border border-gray-200">
+                  {course.join_code}
+                </code>
+              </div>
+            )}
+
+            {course.description && (
+              <p className="text-sm text-gray-500 mb-4 line-clamp-2">
+                {course.description}
+              </p>
+            )}
+            <div className="flex items-center text-xs text-gray-400 space-x-2">
+              <span>{createdDate}</span>
+              <span>•</span>
+              <span>{course.lecture_count} {course.lecture_count === 1 ? 'lecture' : 'lectures'}</span>
+            </div>
+          </div>
+          <div className="mt-auto pt-4 border-t border-gray-100">
+            <div className="flex items-center text-sm text-primary-600 font-medium">
+              <span>Open course</span>
+              <svg className="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </Link>
     );
-  };
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
@@ -207,20 +252,14 @@ export default function Home() {
               <h1 className="text-2xl font-bold text-gray-900">LectureSense</h1>
             </div>
             <nav className="flex items-center space-x-4">
-              {(user?.role === 'instructor' || user?.role === 'admin') ? (
+              {user?.role === 'instructor' && (
                 <Link
                   href="/instructor"
                   className="text-sm font-medium text-gray-700 hover:text-primary-600"
                 >
                   Analytics
                 </Link>
-              ) : null}
-              <Link
-                href="/"
-                className="text-sm font-medium text-gray-700 hover:text-primary-600"
-              >
-                Courses
-              </Link>
+              )}
               {user && (
                 <div className="flex items-center space-x-3 border-l border-gray-300 pl-4">
                   <div className="flex flex-col items-end">
@@ -243,20 +282,102 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Manage Your Courses</h2>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Your Courses</h2>
           <p className="text-gray-600">
-            Group lectures into courses, upload new material, and ask questions across multiple lectures.
+            Select a course to view lectures, ask questions, and access study materials.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="space-y-8">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Create Course</h3>
-              <form className="space-y-4" onSubmit={handleCreateCourse}>
+        {loadingCourses ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <svg className="w-8 h-8 animate-spin mx-auto text-primary-500" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <p className="mt-4 text-gray-500">Loading courses...</p>
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto pb-6 -mx-4 px-4">
+            <div className="flex space-x-4 min-w-max">
+              {/* Create New Course Card */}
+              {user?.role === 'instructor' && (
+                <div
+                  onClick={() => setShowCreateModal(true)}
+                  className="flex-shrink-0 w-80 h-96 bg-gray-100 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-primary-400 hover:bg-gray-50 transition-colors"
+                >
+                  <div className="w-16 h-16 bg-gray-300 rounded-full flex items-center justify-center mb-4">
+                    <svg className="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  </div>
+                  <p className="text-lg font-medium text-gray-700">Create new course</p>
+                </div>
+              )}
+
+              {/* Join Course Card (Visible to students and instructors) */}
+              <div
+                onClick={() => setShowJoinModal(true)}
+                className="flex-shrink-0 w-80 h-96 bg-blue-50 border-2 border-dashed border-blue-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-100 transition-colors"
+              >
+                <div className="w-16 h-16 bg-blue-200 rounded-full flex items-center justify-center mb-4">
+                  <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                  </svg>
+                </div>
+                <p className="text-lg font-medium text-blue-700">Join course with code</p>
+              </div>
+
+              {courses.map((course) => (
+                <CourseCard key={course.id} course={course} createdDate={formatDate(course.created_at)} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!loadingCourses && courses.length === 0 && user?.role !== 'instructor' && (
+          <div className="text-center py-20">
+            <p className="text-gray-500">No courses available. Use a join code to get started.</p>
+          </div>
+        )}
+
+        {!loadingCourses && courses.length === 0 && user?.role === 'instructor' && (
+          <div className="text-center py-20">
+            <p className="text-gray-500 mb-4">You haven't created any courses yet.</p>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="px-6 py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors"
+            >
+              Create Your First Course
+            </button>
+          </div>
+        )}
+      </main>
+
+      {/* Create Course Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-semibold text-gray-900">Create New Course</h3>
+              <button
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setCourseFormError(null);
+                  setNewCourseName('');
+                  setNewCourseDescription('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={handleCreateCourse} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Course Name</label>
                   <input
@@ -266,6 +387,7 @@ export default function Home() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     placeholder="e.g. CS101 - Algorithms"
                     required
+                  autoFocus
                   />
                 </div>
                 <div>
@@ -273,175 +395,80 @@ export default function Home() {
                   <textarea
                     value={newCourseDescription}
                     onChange={(e) => setNewCourseDescription(e.target.value)}
-                    rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
                     placeholder="Optional course description"
                   />
                 </div>
                 {courseFormError && (
-                  <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
+                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
                     {courseFormError}
                   </div>
                 )}
+              <div className="flex space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setCourseFormError(null);
+                    setNewCourseName('');
+                    setNewCourseDescription('');
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
                 <button
                   type="submit"
                   disabled={creatingCourse}
-                  className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {creatingCourse ? 'Creating...' : 'Create Course'}
+                  {creatingCourse ? 'Creating...' : 'Create'}
                 </button>
-              </form>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Courses ({courses.length})
-                </h3>
-                {refreshing && (
-                  <div className="flex items-center space-x-2 text-sm text-gray-500">
-                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span>Refreshing...</span>
-                  </div>
-                )}
-              </div>
-              {loadingCourses ? (
-                <div className="text-center py-12">
-                  <svg className="w-8 h-8 animate-spin mx-auto text-primary-500" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  <p className="mt-4 text-gray-500">Loading courses...</p>
-                </div>
-              ) : courses.length === 0 ? (
-                <p className="text-sm text-gray-500">Create your first course to get started.</p>
-              ) : (
-                <div className="space-y-2">
-                  {courses.map(course => (
-                    <button
-                      key={course.id}
-                      onClick={() => {
-                        setSelectedCourseId(course.id);
-                        setCourseAnswer(null);
-                      }}
-                      className={`w-full text-left p-4 rounded-lg border transition-all ${
-                        selectedCourseId === course.id
-                          ? 'border-primary-500 bg-primary-50'
-                          : 'border-gray-200 hover:border-primary-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-semibold text-gray-900">{course.name}</p>
-                          {course.description && (
-                            <p className="text-sm text-gray-500 truncate">{course.description}</p>
-                          )}
-                        </div>
-                        <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700">
-                          {course.lecture_count} lectures
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="lg:col-span-2 space-y-8">
-            {!selectedCourse ? (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-10 text-center">
-                <p className="text-gray-500">Select or create a course to begin uploading lectures.</p>
-              </div>
-            ) : (
-              <>
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div>
-                      <h3 className="text-2xl font-bold text-gray-900">{selectedCourse.name}</h3>
-                      {selectedCourse.description && (
-                        <p className="text-gray-600 mt-1">{selectedCourse.description}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <span className="text-sm text-gray-500">
-                        {selectedCourse.lecture_count} lectures
-                      </span>
-                      <span className="w-2 h-2 rounded-full bg-green-500" title="Course ready" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Upload Lecture</h3>
-                  <FileUpload courseId={selectedCourse.id} onUploadSuccess={handleUploadSuccess} />
-                </div>
-
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Ask Across Lectures</h3>
-                  <form onSubmit={handleCourseQuery} className="space-y-4">
-                    <textarea
-                      value={courseQuestion}
-                      onChange={(e) => setCourseQuestion(e.target.value)}
-                      placeholder={`Ask a question about ${selectedCourse.name}...`}
-                      rows={3}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      disabled={courseAsking}
-                    />
-                    <div className="flex items-center space-x-4">
-                      <button
-                        type="submit"
-                        disabled={!courseQuestion.trim() || courseAsking}
-                        className="px-6 py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        {courseAsking ? 'Searching...' : 'Ask Course'}
-                      </button>
-                      {courseAsking && (
-                        <div className="flex items-center space-x-2 text-sm text-gray-500">
-                          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          <span>Gathering context...</span>
-                        </div>
-                      )}
                     </div>
                   </form>
-                  {queryError && (
-                    <div className="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
-                      {queryError}
-                    </div>
-                  )}
-                  {courseAnswer && (
-                    <div className="mt-6 border border-gray-200 rounded-lg p-4 bg-gray-50">
-                      <p className="text-gray-800 whitespace-pre-wrap">{courseAnswer.answer}</p>
-                      {courseAnswer.citation && (
-                        <p className="mt-2 text-sm text-primary-600 font-medium">
-                          {courseAnswer.citation}
-                        </p>
-                      )}
-                      {renderSources(courseAnswer.sources)}
-                    </div>
-                  )}
-                </div>
-
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-gray-900">
-                      Lectures in {selectedCourse.name} ({selectedLectures.length})
-                    </h3>
-                  </div>
-                  <LectureList lectures={selectedLectures} onDelete={handleDelete} />
-                </div>
-              </>
-            )}
           </div>
         </div>
-      </main>
+      )}
+
+      {/* Join Course Modal */}
+      {showJoinModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">Join a Course</h3>
+            <form onSubmit={handleJoinCourse} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Enter Join Code</label>
+                <input
+                  type="text"
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-center font-mono text-xl tracking-widest uppercase"
+                  placeholder="XXXXXX"
+                  maxLength={6}
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="flex space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowJoinModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors"
+                >
+                  Join
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

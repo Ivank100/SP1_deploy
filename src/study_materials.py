@@ -70,10 +70,38 @@ def _prepare_context(
 
 def get_materials(lecture_id: int) -> Dict[str, Any]:
     materials = get_lecture_study_materials(lecture_id) or {"summary": None, "key_points": []}
-    flashcards = [
-        {"id": row[0], "front": row[1], "back": row[2], "page_number": row[3]}
-        for row in list_flashcards(lecture_id)
-    ]
+    
+    # Get flashcards - handle both old and new schema
+    flashcard_rows = list_flashcards(lecture_id)
+    flashcards = []
+    for row in flashcard_rows:
+        if len(row) >= 4:
+            # Check if it's new schema (question/answer) or old (front/back)
+            if hasattr(row, '__iter__') and len(row) > 3:
+                # New schema: (id, question, answer, source_keypoint_id, quality_score)
+                if len(row) >= 3 and row[1] and not hasattr(row[1], '__len__') or isinstance(row[1], str):
+                    # Likely new schema
+                    flashcards.append({
+                        "id": row[0],
+                        "question": row[1] if len(row) > 1 else "",
+                        "answer": row[2] if len(row) > 2 else "",
+                        "front": row[1] if len(row) > 1 else "",
+                        "back": row[2] if len(row) > 2 else "",
+                        "source_keypoint_id": row[3] if len(row) > 3 else None,
+                        "quality_score": row[4] if len(row) > 4 else None,
+                        "page_number": None,
+                    })
+                else:
+                    # Old schema: (id, front, back, page_number)
+                    flashcards.append({
+                        "id": row[0],
+                        "front": row[1] if len(row) > 1 else "",
+                        "back": row[2] if len(row) > 2 else "",
+                        "question": row[1] if len(row) > 1 else "",
+                        "answer": row[2] if len(row) > 2 else "",
+                        "page_number": row[3] if len(row) > 3 else None,
+                    })
+    
     return {
         "summary": materials["summary"],
         "key_points": materials["key_points"],

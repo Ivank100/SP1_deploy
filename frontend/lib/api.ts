@@ -112,14 +112,20 @@ export interface KeyPointsResponse {
 
 export interface Flashcard {
   id: number;
-  front: string;
-  back: string;
+  front?: string;
+  back?: string;
+  question?: string;
+  answer?: string;
   page_number?: number | null;
+  source_keypoint_id?: number | null;
+  quality_score?: number | null;
 }
 
 export interface FlashcardListResponse {
   lecture_id: number;
   flashcards: Flashcard[];
+  set_id?: number | null;
+  strategy?: string | null;
 }
 
 export interface StudyMaterialsResponse {
@@ -167,6 +173,7 @@ export interface Course {
   created_at: string;
   lecture_count: number;
   lectures: Lecture[];
+  join_code: string;
 }
 
 export interface CourseListResponse {
@@ -235,13 +242,13 @@ export interface QueryListResponse {
 export interface User {
   id: number;
   email: string;
-  role: 'student' | 'instructor' | 'admin';
+  role: 'student' | 'instructor';
 }
 
 export interface RegisterRequest {
   email: string;
   password: string;
-  role?: 'student' | 'instructor' | 'admin';
+  role?: 'student' | 'instructor';
 }
 
 export interface LoginRequest {
@@ -262,9 +269,41 @@ export const apiClient = {
     const response = await api.get<CourseListResponse>('/api/courses');
     return response.data;
   },
-
+  async joinCourse(code: string): Promise<{ course_id: number }> {
+    const response = await api.post('/api/courses/join', { code });
+    return response.data;
+  },
   async createCourse(payload: CreateCoursePayload): Promise<Course> {
     const response = await api.post<Course>('/api/courses', payload);
+    return response.data;
+  },
+  async deleteCourse(courseId: number): Promise<void> {
+  await api.delete(`/api/courses/${courseId}`);
+},
+
+  async addStudentToCourse(courseId: number, email: string): Promise<{ message: string; student_id?: number; student_email: string }> {
+    const response = await api.post(`/api/courses/${courseId}/students`, { email });
+    return response.data;
+  },
+
+  async removeStudentFromCourse(courseId: number, studentId: number): Promise<{ message: string }> {
+    const response = await api.delete(`/api/courses/${courseId}/students/${studentId}`);
+    return response.data;
+  },
+
+  async getCourseStudents(courseId: number): Promise<{ student_id: number; student_email: string }[]> {
+    const response = await api.get(`/api/courses/${courseId}/students`);
+    return response.data;
+  },
+
+  async getCourseAnalytics(courseId: number): Promise<{
+    total_questions: number;
+    active_students: number;
+    top_confused_topics: Array<{ topic: string; count: number; questions?: string[] }>;
+    trend_percentage: number;
+    trend_direction: string;
+  }> {
+    const response = await api.get(`/api/courses/${courseId}/analytics`);
     return response.data;
   },
 
@@ -375,8 +414,18 @@ export const apiClient = {
     return response.data;
   },
 
-  async generateFlashcards(lectureId: number): Promise<FlashcardListResponse> {
-    const response = await api.post<FlashcardListResponse>(`/api/lectures/${lectureId}/flashcards`);
+  async generateFlashcards(lectureId: number, regenerate: boolean = false): Promise<FlashcardListResponse> {
+    if (regenerate) {
+      const response = await api.post<FlashcardListResponse>(`/api/lectures/${lectureId}/flashcards/regenerate`);
+      return response.data;
+    } else {
+      const response = await api.post<FlashcardListResponse>(`/api/lectures/${lectureId}/flashcards/generate`);
+      return response.data;
+    }
+  },
+
+  async getLatestFlashcards(lectureId: number): Promise<FlashcardListResponse> {
+    const response = await api.get<FlashcardListResponse>(`/api/lectures/${lectureId}/flashcards/latest`);
     return response.data;
   },
 
@@ -414,7 +463,7 @@ export const apiClient = {
   },
 
   // Authentication
-  async register(email: string, password: string, role: 'student' | 'instructor' | 'admin' = 'student'): Promise<TokenResponse> {
+  async register(email: string, password: string, role: 'student' | 'instructor' = 'student'): Promise<TokenResponse> {
     const response = await api.post<TokenResponse>('/api/auth/register', { email, password, role });
     if (typeof window !== 'undefined') {
       localStorage.setItem('auth_token', response.data.access_token);

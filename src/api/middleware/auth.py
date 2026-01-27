@@ -61,26 +61,12 @@ async def get_current_instructor(
     current_user: dict = Depends(get_current_user)
 ) -> dict:
     """
-    Dependency to ensure the current user is an instructor or admin.
+    Dependency to ensure the current user is an instructor.
     """
-    if current_user["role"] not in ("instructor", "admin"):
+    if current_user["role"] != "instructor":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Instructor or admin access required",
-        )
-    return current_user
-
-
-async def get_current_admin(
-    current_user: dict = Depends(get_current_user)
-) -> dict:
-    """
-    Dependency to ensure the current user is an admin.
-    """
-    if current_user["role"] != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
+            detail="Instructor access required",
         )
     return current_user
 

@@ -1,0 +1,583 @@
+"""
+Flashcard generation pipeline with validation, deduplication, and quality control.
+Generates exactly 10 high-quality flashcards per set.
+"""
+import json
+import re
+import random
+from typing import List, Dict, Any, Tuple, Optional, Set
+import numpy as np
+
+from .deepseek_client import DeepSeekClient
+from .embedding_model import embed_texts
+from .db import (
+    get_lecture_study_materials,
+    get_previous_flashcard_questions,
+    get_chunks_for_lecture,
+)
+
+
+# Hard limits
+MAX_QUESTION_WORDS = 20
+MAX_ANSWER_WORDS = 25
+CANDIDATE_COUNT = 20
+FINAL_COUNT = 10
+MAX_SIMILARITY_THRESHOLD = 0.90
+
+# Banned phrases
+BANNED_QUESTION_PATTERNS = [
+    r'\bexplain\b',
+    r'\bdescribe\b',
+    r'\bdiscuss\b',
+    r'\belaborate\b',
+    r'\bwhy\b',
+    r'\bhow would you\b',
+    r'\bwhat do you think\b',
+    r'\bin your opinion\b',
+    r'\bhow do you feel\b',
+]
+
+VAGUE_ANSWER_PATTERNS = [
+    r'\bvarious\b',
+    r'\bseveral\b',
+    r'\bit depends\b',
+]
+
+
+def normalize_text(text: str) -> str:
+    """Normalize text for duplicate detection."""
+    # Lowercase, trim, collapse spaces, remove punctuation
+    text = text.lower().strip()
+    text = re.sub(r'[^\w\s]', '', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text
+
+
+def count_words(text: str) -> int:
+    """Count words in text."""
+    return len(text.split())
+
+
+def contains_banned_phrase(text: str, patterns: List[str]) -> bool:
+    """Check if text contains any banned phrase."""
+    text_lower = text.lower()
+    return any(re.search(pattern, text_lower) for pattern in patterns)
+
+
+def validate_flashcard(question: str, answer: str) -> Tuple[bool, Optional[str]]:
+    """
+    Validate a single flashcard candidate.
+    Returns (is_valid, error_message).
+    """
+    q_words = count_words(question)
+    a_words = count_words(answer)
+    
+    if q_words > MAX_QUESTION_WORDS:
+        return False, f"Question has {q_words} words (max {MAX_QUESTION_WORDS})"
+    
+    if a_words > MAX_ANSWER_WORDS:
+        return False, f"Answer has {a_words} words (max {MAX_ANSWER_WORDS})"
+    
+    if contains_banned_phrase(question, BANNED_QUESTION_PATTERNS):
+        return False, "Question contains banned phrase (explain, describe, etc.)"
+    
+    if contains_banned_phrase(answer, VAGUE_ANSWER_PATTERNS):
+        return False, "Answer is too vague"
+    
+    # Check for generic prompts
+    question_lower = question.lower().strip()
+    if question_lower.startswith(('what do you think', 'in your opinion')):
+        return False, "Question is too generic/opinion-based"
+    
+    return True, None
+
+
+def compute_quality_score(question: str, answer: str, keypoint_text: Optional[str] = None) -> float:
+    """
+    Compute quality score for a flashcard candidate.
+    Higher is better.
+    """
+    score = 0.0
+    
+    # Good question starters
+    question_lower = question.lower().strip()
+    good_starters = ['what', 'which', 'when', 'where', 'who', 'how']
+    if any(question_lower.startswith(starter) for starter in good_starters):
+        if not question_lower.startswith('how do you feel'):
+            score += 1.0
+    
+    # Answer length sweet spot (6-20 words)
+    a_words = count_words(answer)
+    if 6 <= a_words <= 20:
+        score += 1.0
+    
+    # Includes concrete term from keypoint (if provided)
+    if keypoint_text:
+        keypoint_words = set(keypoint_text.lower().split())
+        question_words = set(question.lower().split())
+        answer_words = set(answer.lower().split())
+        if keypoint_words.intersection(question_words) or keypoint_words.intersection(answer_words):
+            score += 1.0
+    
+    # Penalties
+    if 'various' in answer.lower() or 'several' in answer.lower() or 'it depends' in answer.lower():
+        score -= 2.0
+    
+    # Multi-concept penalty (contains "and" in question)
+    if ' and ' in question.lower():
+        score -= 2.0
+    
+    return score
+
+
+def compute_cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+    """Compute cosine similarity between two vectors."""
+    vec1 = np.array(vec1)
+    vec2 = np.array(vec2)
+    dot_product = np.dot(vec1, vec2)
+    norm1 = np.linalg.norm(vec1)
+    norm2 = np.linalg.norm(vec2)
+    if norm1 == 0 or norm2 == 0:
+        return 0.0
+    return dot_product / (norm1 * norm2)
+
+
+def deduplicate_candidates(
+    candidates: List[Dict[str, Any]],
+    existing_questions: List[str],
+    embedding_func,
+) -> List[Dict[str, Any]]:
+    """
+    Remove duplicates from candidates using both exact matching and semantic similarity.
+    """
+    if not candidates:
+        return []
+    
+    # Normalize existing questions
+    existing_normalized = {normalize_text(q): q for q in existing_questions}
+    
+    # Embed all candidate questions
+    candidate_questions = [c.get('question', '') for c in candidates]
+    candidate_embeddings = embedding_func(candidate_questions)
+    
+    # Embed existing questions if any
+    existing_embeddings = None
+    if existing_questions:
+        existing_embeddings = embedding_func(existing_questions)
+    
+    filtered = []
+    seen_normalized = set()
+    seen_embeddings = []
+    
+    for i, candidate in enumerate(candidates):
+        question = candidate.get('question', '')
+        if not question:
+            continue
+        
+        # Check exact duplicate
+        q_normalized = normalize_text(question)
+        if q_normalized in existing_normalized or q_normalized in seen_normalized:
+            continue
+        
+        # Check semantic similarity with existing questions
+        candidate_emb = candidate_embeddings[i]
+        is_duplicate = False
+        
+        if existing_embeddings:
+            for existing_emb in existing_embeddings:
+                similarity = compute_cosine_similarity(candidate_emb, existing_emb)
+                if similarity > MAX_SIMILARITY_THRESHOLD:
+                    is_duplicate = True
+                    break
+        
+        if not is_duplicate:
+            # Check against already-selected candidates
+            for seen_emb in seen_embeddings:
+                similarity = compute_cosine_similarity(candidate_emb, seen_emb)
+                if similarity > MAX_SIMILARITY_THRESHOLD:
+                    is_duplicate = True
+                    break
+        
+        if not is_duplicate:
+            filtered.append(candidate)
+            seen_normalized.add(q_normalized)
+            seen_embeddings.append(candidate_emb)
+    
+    return filtered
+
+
+def select_final_flashcards(
+    candidates: List[Dict[str, Any]],
+    target_count: int = FINAL_COUNT,
+    max_per_keypoint: int = 2,
+) -> List[Dict[str, Any]]:
+    """
+    Select final flashcards with coverage constraints.
+    Ensures max_per_keypoint cards per keypoint_index, spreading across keypoints.
+    """
+    if len(candidates) <= target_count:
+        return candidates
+    
+    # Group by keypoint_index
+    by_keypoint: Dict[int, List[Dict[str, Any]]] = {}
+    no_keypoint = []
+    
+    for candidate in candidates:
+        kp_idx = candidate.get('keypoint_index')
+        if kp_idx is not None:
+            if kp_idx not in by_keypoint:
+                by_keypoint[kp_idx] = []
+            by_keypoint[kp_idx].append(candidate)
+        else:
+            no_keypoint.append(candidate)
+    
+    # Sort each group by quality score
+    for kp_idx in by_keypoint:
+        by_keypoint[kp_idx].sort(
+            key=lambda c: c.get('quality_score', 0.0),
+            reverse=True
+        )
+    
+    # Round-robin selection
+    selected = []
+    keypoint_indices = list(by_keypoint.keys())
+    keypoint_positions = {kp_idx: 0 for kp_idx in keypoint_indices}
+    
+    while len(selected) < target_count and (by_keypoint or no_keypoint):
+        # Try to pick from keypoints first
+        for kp_idx in keypoint_indices:
+            if len(selected) >= target_count:
+                break
+            
+            if kp_idx not in by_keypoint:
+                continue
+            
+            # Check if we've reached max per keypoint
+            current_count = sum(1 for s in selected if s.get('keypoint_index') == kp_idx)
+            if current_count >= max_per_keypoint:
+                continue
+            
+            pos = keypoint_positions[kp_idx]
+            if pos < len(by_keypoint[kp_idx]):
+                selected.append(by_keypoint[kp_idx][pos])
+                keypoint_positions[kp_idx] += 1
+        
+        # If we still need more, relax constraint or use no-keypoint cards
+        if len(selected) < target_count:
+            # Relax to max_per_keypoint + 1 if needed
+            if max_per_keypoint >= 2:
+                max_per_keypoint = max_per_keypoint + 1
+                continue
+            
+            # Use no-keypoint cards
+            if no_keypoint:
+                selected.append(no_keypoint.pop(0))
+            else:
+                break
+    
+    # Sort by quality score
+    selected.sort(key=lambda c: c.get('quality_score', 0.0), reverse=True)
+    
+    return selected[:target_count]
+
+
+def generate_flashcard_candidates(
+    key_points: List[str],
+    existing_questions: List[str],
+    strategy: str = "keypoints_v1",
+    candidate_count: int = CANDIDATE_COUNT,
+) -> List[Dict[str, Any]]:
+    """
+    Generate flashcard candidates using LLM.
+    Returns list of candidate dicts with question, answer, keypoint_index.
+    """
+    client = DeepSeekClient()
+    
+    # Format key points for prompt
+    key_points_text = "\n".join(f"{i+1}) {kp}" for i, kp in enumerate(key_points))
+    
+    # Format existing questions
+    existing_questions_text = ""
+    if existing_questions:
+        existing_questions_text = "\n\nAvoid repeating these existing questions (semantic duplicates also):\n" + "\n".join(f"- {q}" for q in existing_questions[:10])
+    
+    # Build prompt based on strategy
+    focus_instruction = ""
+    if "definitions" in strategy:
+        focus_instruction = "\nFocus on definitions and distinctions. Avoid process/step questions unless necessary."
+    elif "process" in strategy:
+        focus_instruction = "\nFocus on processes and steps. Prefer 'how' questions about procedures."
+    
+    system_prompt = """You generate study flashcards.
+
+Hard rules:
+- Return JSON only. No markdown.
+- Generate exactly N flashcard candidates (not final selection).
+- Each flashcard has: question, answer, keypoint_index.
+- Questions must be <= 20 words.
+- Answers must be <= 25 words and 1-2 short sentences max.
+- Avoid vague prompts: "explain", "discuss", "describe", "why", "write about".
+- Each flashcard must test ONE concept.
+- No citations, no page numbers, no timestamps."""
+    
+    user_prompt = f"""Create {candidate_count} flashcard CANDIDATES from these key points.
+
+Key points (indexed):
+{key_points_text}{existing_questions_text}{focus_instruction}
+
+Return JSON array:
+[
+  {{"question":"...", "answer":"...", "keypoint_index": 3}},
+  ...
+]"""
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    
+    response = client.chat(messages, temperature=0.7).strip()
+    
+    # Parse JSON response
+    try:
+        # Remove markdown code blocks if present
+        response = re.sub(r'```json\s*', '', response)
+        response = re.sub(r'```\s*', '', response)
+        response = response.strip()
+        
+        parsed = json.loads(response)
+        if not isinstance(parsed, list):
+            raise ValueError("Response is not a list")
+        
+        candidates = []
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            
+            question = item.get("question") or item.get("front") or ""
+            answer = item.get("answer") or item.get("back") or ""
+            kp_idx = item.get("keypoint_index")
+            
+            if question and answer:
+                # Validate keypoint_index
+                if kp_idx is not None:
+                    try:
+                        kp_idx = int(kp_idx)
+                        if kp_idx < 1 or kp_idx > len(key_points):
+                            kp_idx = None
+                    except (ValueError, TypeError):
+                        kp_idx = None
+                
+                candidates.append({
+                    "question": question.strip(),
+                    "answer": answer.strip(),
+                    "keypoint_index": kp_idx,
+                })
+        
+        return candidates
+    
+    except (json.JSONDecodeError, ValueError) as e:
+        raise ValueError(f"Failed to parse LLM response as JSON: {e}")
+
+
+def fill_missing_flashcards(
+    key_points: List[str],
+    already_selected: List[Dict[str, Any]],
+    missing_count: int,
+) -> List[Dict[str, Any]]:
+    """Generate additional flashcards to fill missing slots."""
+    client = DeepSeekClient()
+    
+    existing_questions = [c.get("question", "") for c in already_selected]
+    key_points_text = "\n".join(f"{i+1}) {kp}" for i, kp in enumerate(key_points))
+    existing_questions_text = "\n".join(f"- {q}" for q in existing_questions)
+    
+    system_prompt = """You generate study flashcards.
+
+Hard rules:
+- Return JSON only. No markdown.
+- Each flashcard has: question, answer, keypoint_index.
+- Questions must be <= 20 words.
+- Answers must be <= 25 words and 1-2 short sentences max.
+- Avoid vague prompts: "explain", "discuss", "describe", "why"."""
+    
+    user_prompt = f"""You must generate {missing_count} additional flashcards.
+
+Do NOT repeat or paraphrase any of these questions:
+{existing_questions_text}
+
+Use these key points:
+{key_points_text}
+
+Return JSON array only."""
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    
+    response = client.chat(messages, temperature=0.8).strip()
+    
+    try:
+        response = re.sub(r'```json\s*', '', response)
+        response = re.sub(r'```\s*', '', response)
+        response = response.strip()
+        
+        parsed = json.loads(response)
+        if not isinstance(parsed, list):
+            raise ValueError("Response is not a list")
+        
+        candidates = []
+        for item in parsed[:missing_count]:
+            if not isinstance(item, dict):
+                continue
+            
+            question = item.get("question") or item.get("front") or ""
+            answer = item.get("answer") or item.get("back") or ""
+            kp_idx = item.get("keypoint_index")
+            
+            if question and answer:
+                if kp_idx is not None:
+                    try:
+                        kp_idx = int(kp_idx)
+                        if kp_idx < 1 or kp_idx > len(key_points):
+                            kp_idx = None
+                    except (ValueError, TypeError):
+                        kp_idx = None
+                
+                candidates.append({
+                    "question": question.strip(),
+                    "answer": answer.strip(),
+                    "keypoint_index": kp_idx,
+                })
+        
+        return candidates
+    
+    except (json.JSONDecodeError, ValueError) as e:
+        raise ValueError(f"Failed to parse fill-missing response as JSON: {e}")
+
+
+def generate_flashcards_v2(
+    lecture_id: int,
+    user_id: Optional[int] = None,
+    strategy: str = "keypoints_v1",
+    regenerate: bool = False,
+) -> List[Dict[str, Any]]:
+    """
+    Main flashcard generation pipeline.
+    Returns list of 10 validated flashcards.
+    """
+    # 1. Fetch keypoints
+    key_points = _get_lecture_key_points(lecture_id)
+    if not key_points or len(key_points) < 3:
+        raise ValueError(
+            f"Need at least 3 key points for flashcard generation. "
+            f"Found {len(key_points) if key_points else 0}."
+        )
+    
+    # 2. Fetch prior flashcards if regenerating
+    existing_questions = []
+    if regenerate:
+        existing_questions = get_previous_flashcard_questions(lecture_id, limit_sets=3)
+    
+    # 3. Generate candidates
+    candidates = generate_flashcard_candidates(
+        key_points,
+        existing_questions,
+        strategy=strategy,
+        candidate_count=CANDIDATE_COUNT,
+    )
+    
+    if not candidates:
+        raise ValueError("No candidates generated by LLM")
+    
+    # 4. Validate & filter
+    validated = []
+    for candidate in candidates:
+        is_valid, error = validate_flashcard(
+            candidate.get("question", ""),
+            candidate.get("answer", ""),
+        )
+        if is_valid:
+            # Add quality score
+            kp_idx = candidate.get("keypoint_index")
+            kp_text = key_points[kp_idx - 1] if kp_idx and 1 <= kp_idx <= len(key_points) else None
+            candidate["quality_score"] = compute_quality_score(
+                candidate["question"],
+                candidate["answer"],
+                kp_text,
+            )
+            validated.append(candidate)
+    
+    # 5. Deduplicate using embeddings
+    # Use simple embedding function for now (can be upgraded to DeepSeek embeddings)
+    def embedding_func(texts: List[str]) -> List[List[float]]:
+        return embed_texts(texts)
+    
+    deduplicated = deduplicate_candidates(validated, existing_questions, embedding_func)
+    
+    # 6. Select best 10 with coverage
+    max_per_keypoint = 2 if len(key_points) >= 5 else 3
+    selected = select_final_flashcards(
+        deduplicated,
+        target_count=FINAL_COUNT,
+        max_per_keypoint=max_per_keypoint,
+    )
+    
+    # 7. Fill missing if needed
+    if len(selected) < FINAL_COUNT:
+        missing_count = FINAL_COUNT - len(selected)
+        try:
+            additional = fill_missing_flashcards(
+                key_points,
+                selected,
+                missing_count,
+            )
+            # Validate and add
+            for candidate in additional:
+                is_valid, _ = validate_flashcard(
+                    candidate.get("question", ""),
+                    candidate.get("answer", ""),
+                )
+                if is_valid:
+                    kp_idx = candidate.get("keypoint_index")
+                    kp_text = key_points[kp_idx - 1] if kp_idx and 1 <= kp_idx <= len(key_points) else None
+                    candidate["quality_score"] = compute_quality_score(
+                        candidate["question"],
+                        candidate["answer"],
+                        kp_text,
+                    )
+                    selected.append(candidate)
+                    if len(selected) >= FINAL_COUNT:
+                        break
+        except Exception as e:
+            # If fill fails, just return what we have
+            pass
+    
+    # Ensure we return exactly FINAL_COUNT (or as many as possible)
+    final = selected[:FINAL_COUNT]
+    
+    # Add source_keypoint_id (1-indexed in prompt, 0-indexed in list)
+    for card in final:
+        kp_idx = card.get("keypoint_index")
+        if kp_idx and 1 <= kp_idx <= len(key_points):
+            card["source_keypoint_id"] = kp_idx - 1  # 0-indexed for storage
+    
+    return final
+
+
+def _get_lecture_key_points(lecture_id: int) -> List[str]:
+    """Get key points for a lecture."""
+    materials = get_lecture_study_materials(lecture_id)
+    if not materials:
+        return []
+    
+    key_points = materials.get("key_points", [])
+    if isinstance(key_points, str):
+        import json
+        try:
+            key_points = json.loads(key_points)
+        except json.JSONDecodeError:
+            return []
+    
+    return key_points if isinstance(key_points, list) else []

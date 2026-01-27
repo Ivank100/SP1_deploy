@@ -39,10 +39,10 @@ async def register(request: RegisterRequest):
     Register a new user.
     """
     # Validate role
-    if request.role not in ("student", "instructor", "admin"):
+    if request.role not in ("student", "instructor"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid role. Must be 'student', 'instructor', or 'admin'",
+            detail="Invalid role. Must be 'student' or 'instructor'",
         )
     
     # Check if user already exists

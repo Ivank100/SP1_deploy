@@ -71,20 +71,20 @@ export default function LectureList({ lectures, onDelete }: LectureListProps) {
                 • {new Date(lecture.created_at).toLocaleDateString()}
               </p>
             </div>
-            <div className="flex items-center space-x-3">
-              <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700 capitalize">
+          </Link>
+          <div className="flex items-center space-x-2">
+            <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700 capitalize whitespace-nowrap">
                 {lecture.file_type}
               </span>
-              <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(lecture.status)}`}>
+            <span className={`px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap ${getStatusColor(lecture.status)}`}>
                 {lecture.status}
               </span>
               {lecture.file_type === 'audio' && lecture.has_transcript && (
-                <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-600">
+              <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-600 whitespace-nowrap">
                   transcript
                 </span>
               )}
-            </div>
-          </Link>
+            {onDelete && (
           <button
             onClick={(e) => {
               e.preventDefault();
@@ -92,13 +92,15 @@ export default function LectureList({ lectures, onDelete }: LectureListProps) {
                 onDelete(lecture.id);
               }
             }}
-            className="ml-4 p-2 text-gray-400 hover:text-red-600 transition-colors"
+                className="ml-2 p-2 text-gray-400 hover:text-red-600 transition-colors"
             title="Delete lecture"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
           </button>
+            )}
+          </div>
         </div>
       ))}
     </div>

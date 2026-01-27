@@ -319,12 +319,21 @@ export default function LecturePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
+              {lecture?.course_id ? (
+                <Link
+                  href={`/courses/${lecture.course_id}`}
+                  className="text-sm font-medium text-gray-700 hover:text-primary-600"
+                >
+                  ← Back to Course
+                </Link>
+              ) : (
               <Link
                 href="/"
                 className="text-sm font-medium text-gray-700 hover:text-primary-600"
               >
                 ← Back to Courses
               </Link>
+              )}
             </div>
             {(() => {
               const currentUser = apiClient.getStoredUser();
@@ -664,7 +673,7 @@ export default function LecturePage() {
               className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={flashcardsLoading}
             >
-              {flashcardsLoading ? 'Generating...' : materials?.flashcards?.length ? 'Regenerate' : 'Generate'}
+              {flashcardsLoading ? 'Generating...' : materials?.flashcards?.length ? 'Regenerate 10 Cards' : 'Generate 10 Cards'}
             </button>
           </div>
           {loadingMaterials ? (

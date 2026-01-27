@@ -25,11 +25,11 @@ export default function Flashcards({ flashcards }: FlashcardsProps) {
           <div className="text-xs font-semibold uppercase text-primary-600 mb-2">
             Question
           </div>
-          <p className="text-gray-900 font-medium mb-3 whitespace-pre-wrap">{card.front}</p>
+          <p className="text-gray-900 font-medium mb-3 whitespace-pre-wrap">{card.front || (card as any).question || ''}</p>
           <div className="text-xs font-semibold uppercase text-gray-500 mb-2">
             Answer
           </div>
-          <p className="text-gray-700 whitespace-pre-wrap">{card.back}</p>
+          <p className="text-gray-700 whitespace-pre-wrap">{card.back || (card as any).answer || ''}</p>
           {card.page_number && (
             <p className="mt-3 text-xs text-gray-500">Page {card.page_number}</p>
           )}

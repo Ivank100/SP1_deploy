@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from ..config import UPLOAD_DIR
-from .routes import admin, audio, auth, courses, instructor, lectures, queries, slides, study_materials
+from .routes import audio, auth, courses, instructor, lectures, queries, slides, study_materials
 
 app = FastAPI(
     title="LectureSense API",
@@ -32,7 +32,6 @@ app.include_router(study_materials.router)
 app.include_router(audio.router)
 app.include_router(instructor.router)
 app.include_router(slides.router)
-app.include_router(admin.router)
 
 # Serve uploaded files (PDF/audio) for playback/downloading
 uploads_path = Path(UPLOAD_DIR).resolve()

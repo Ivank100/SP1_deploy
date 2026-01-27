@@ -75,7 +75,7 @@ async def get_query_clusters(
                     all_queries.extend(course_queries)
                 queries = all_queries[:500]
     else:
-        # Admin - show all (or filtered by course_id/lecture_id if specified)
+        # Instructor - show all queries (filtered by course_id/lecture_id if specified)
         queries = get_all_queries(limit=500, lecture_id=lecture_id, course_id=course_id)
     
     questions = [q["question"] for q in queries if q["question"]]
@@ -126,12 +126,9 @@ async def get_trends(
                 # lecture_id will be handled by get_query_trends
                 assigned_course_ids = assigned_courses
     
-    # If admin and course_id specified, filter to that course
-    if course_id and current_user["role"] == "admin":
+    # If course_id specified, filter to that course
+    if course_id:
         assigned_course_ids = [course_id]
-    elif current_user["role"] == "admin" and not course_id:
-        # Admin with no course_id = show all courses
-        assigned_course_ids = None
     
     trends = get_query_trends(days=days, group_by=group_by, course_ids=assigned_course_ids, lecture_id=lecture_id)
     return {
@@ -174,12 +171,9 @@ async def get_lecture_health(
                 # lecture_id will be handled by get_lecture_health_metrics
                 assigned_course_ids = assigned_courses
     
-    # If admin and course_id specified, filter to that course
-    if course_id and current_user["role"] == "admin":
+    # If course_id specified, filter to that course
+    if course_id:
         assigned_course_ids = [course_id]
-    elif current_user["role"] == "admin" and not course_id:
-        # Admin with no course_id = show all courses
-        assigned_course_ids = None
     
     metrics = get_lecture_health_metrics(course_ids=assigned_course_ids, lecture_id=lecture_id)
     return {
@@ -199,7 +193,7 @@ async def list_all_queries(
     Get all student queries with optional filters.
     For instructors, only shows queries from courses they're assigned to.
     """
-    # If instructor (not admin), filter by assigned courses
+    # Filter by assigned courses
     if current_user["role"] == "instructor":
         assigned_courses = get_instructor_assigned_courses(current_user["id"])
         
@@ -236,7 +230,7 @@ async def list_all_queries(
                 "total": len(all_queries),
             }
     
-    # Admin - show all queries
+    # Show all queries
     queries = get_all_queries(limit=limit, lecture_id=lecture_id, course_id=course_id)
     return {
         "queries": queries,

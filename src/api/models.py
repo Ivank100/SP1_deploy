@@ -83,16 +83,60 @@ class KeyPointsResponse(BaseModel):
     cached: bool = False
 
 class FlashcardModel(BaseModel):
-    """Single flashcard entry."""
+    """Single flashcard entry (supports both old and new schema)."""
     id: int
-    front: str
-    back: str
+    question: Optional[str] = None
+    answer: Optional[str] = None
+    front: Optional[str] = None
+    back: Optional[str] = None
     page_number: Optional[int] = None
+    source_keypoint_id: Optional[int] = None
+    quality_score: Optional[float] = None
+    
+    def model_post_init(self, __context) -> None:
+        """Normalize front/back to question/answer for compatibility."""
+        if self.question is None and self.front:
+            self.question = self.front
+        if self.answer is None and self.back:
+            self.answer = self.back
+        if self.front is None and self.question:
+            self.front = self.question
+        if self.back is None and self.answer:
+            self.back = self.answer
+    
+    @property
+    def display_question(self) -> str:
+        """Get question text (prefers question over front)."""
+        return self.question or self.front or ""
+    
+    @property
+    def display_answer(self) -> str:
+        """Get answer text (prefers answer over back)."""
+        return self.answer or self.back or ""
+
+class FlashcardSetModel(BaseModel):
+    """Flashcard set metadata."""
+    id: int
+    lecture_id: int
+    strategy: str
+    created_at: datetime
+    created_by_user_id: Optional[int] = None
+    
+    class Config:
+        from_attributes = True
 
 class FlashcardListResponse(BaseModel):
     """Response for flashcard requests."""
     lecture_id: int
     flashcards: List[FlashcardModel]
+    set_id: Optional[int] = None
+    strategy: Optional[str] = None
+
+class FlashcardGenerateRequest(BaseModel):
+    """Request for generating flashcards."""
+    count: int = 10
+    regenerate: bool = False
+    strategy: str = "keypoints_v1"
 
 class StudyMaterialsResponse(BaseModel):
     """Aggregated study materials for a lecture."""
@@ -107,13 +151,13 @@ class ErrorResponse(BaseModel):
     detail: Optional[str] = None
 
 class CourseResponse(BaseModel):
-    """Response model for course data."""
     id: int
     name: str
-    description: Optional[str] = None
+    description: Optional[str]
     created_at: datetime
-    lecture_count: int = 0
-    lectures: List[LectureResponse] = []
+    join_code: str  # <--- Add this line
+    lecture_count: int
+    lectures: List[LectureResponse]
 
 class CourseListResponse(BaseModel):
     """Response model for listing courses."""
