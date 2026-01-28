@@ -329,6 +329,13 @@ export default function CourseDetailPage() {
   }, [user?.role, courseId]);
 
   useEffect(() => {
+    if (user?.role === 'instructor' && courseId) {
+      loadCourseStudents(courseId);
+      loadSections(courseId);
+    }
+  }, [user?.role, courseId]);
+
+  useEffect(() => {
     const interval = setInterval(() => {
       if (course) {
         const hasProcessing = course.lectures.some(lecture => lecture.status === 'processing');
@@ -391,16 +398,19 @@ export default function CourseDetailPage() {
 
   const loadCourseStudents = async (courseId: number) => {
     if (user?.role !== 'instructor') return;
-    
-    setLoadingStudents({ ...loadingStudents, [courseId]: true });
-    setStudentError({ ...studentError, [courseId]: null });
+
+    setLoadingStudents((prev) => ({ ...prev, [courseId]: true }));
+    setStudentError((prev) => ({ ...prev, [courseId]: null }));
     try {
       const students = await apiClient.getCourseStudents(courseId);
-      setCourseStudents({ ...courseStudents, [courseId]: students });
+      setCourseStudents((prev) => ({ ...prev, [courseId]: students }));
     } catch (error: any) {
-      setStudentError({ ...studentError, [courseId]: error.response?.data?.detail || 'Failed to load students' });
+      setStudentError((prev) => ({
+        ...prev,
+        [courseId]: error.response?.data?.detail || 'Failed to load students',
+      }));
     } finally {
-      setLoadingStudents({ ...loadingStudents, [courseId]: false });
+      setLoadingStudents((prev) => ({ ...prev, [courseId]: false }));
     }
   };
 
@@ -408,15 +418,19 @@ export default function CourseDetailPage() {
     if (user?.role !== 'instructor') return;
     try {
       const response = await apiClient.getCourseSections(courseId);
-      setSections({ ...sections, [courseId]: response.sections });
-      const existingSelection = selectedSectionId[courseId];
-      const hasSelection =
-        existingSelection && response.sections.some((section) => section.id === existingSelection);
-      if (!hasSelection && response.sections.length > 0) {
-        setSelectedSectionId({ ...selectedSectionId, [courseId]: response.sections[0].id });
-      } else if (response.sections.length === 0) {
-        setSelectedSectionId({ ...selectedSectionId, [courseId]: null });
-      }
+      setSections((prev) => ({ ...prev, [courseId]: response.sections }));
+      setSelectedSectionId((prev) => {
+        const existingSelection = prev[courseId];
+        const hasSelection =
+          existingSelection && response.sections.some((section) => section.id === existingSelection);
+        if (hasSelection) {
+          return prev;
+        }
+        if (response.sections.length > 0) {
+          return { ...prev, [courseId]: response.sections[0].id };
+        }
+        return { ...prev, [courseId]: null };
+      });
       for (const section of response.sections) {
         await loadGroups(courseId, section.id);
       }
@@ -438,38 +452,38 @@ export default function CourseDetailPage() {
   const loadAnnouncements = async (courseId: number) => {
     try {
       const response = await apiClient.getAnnouncements(courseId);
-      setAnnouncements({ ...announcements, [courseId]: response.announcements });
+      setAnnouncements((prev) => ({ ...prev, [courseId]: response.announcements }));
     } catch (error) {
       console.error('Failed to load announcements:', error);
     }
   };
 
   const loadUploadRequests = async (courseId: number) => {
-    setLoadingUploadRequests({ ...loadingUploadRequests, [courseId]: true });
+    setLoadingUploadRequests((prev) => ({ ...prev, [courseId]: true }));
     try {
       const response = await apiClient.getUploadRequests(courseId, 'pending');
-      setUploadRequests({ ...uploadRequests, [courseId]: response.requests });
-      setCanReviewUploads({ ...canReviewUploads, [courseId]: true });
+      setUploadRequests((prev) => ({ ...prev, [courseId]: response.requests }));
+      setCanReviewUploads((prev) => ({ ...prev, [courseId]: true }));
     } catch (error: any) {
       if (error.response?.status === 403) {
-        setCanReviewUploads({ ...canReviewUploads, [courseId]: false });
+        setCanReviewUploads((prev) => ({ ...prev, [courseId]: false }));
       } else {
         console.error('Failed to load upload requests:', error);
       }
     } finally {
-      setLoadingUploadRequests({ ...loadingUploadRequests, [courseId]: false });
+      setLoadingUploadRequests((prev) => ({ ...prev, [courseId]: false }));
     }
   };
 
   const loadMyUploadRequests = async (courseId: number) => {
-    setLoadingMyUploadRequests({ ...loadingMyUploadRequests, [courseId]: true });
+    setLoadingMyUploadRequests((prev) => ({ ...prev, [courseId]: true }));
     try {
       const response = await apiClient.getMyUploadRequests(courseId);
-      setMyUploadRequests({ ...myUploadRequests, [courseId]: response.requests });
+      setMyUploadRequests((prev) => ({ ...prev, [courseId]: response.requests }));
     } catch (error) {
       console.error('Failed to load my upload requests:', error);
     } finally {
-      setLoadingMyUploadRequests({ ...loadingMyUploadRequests, [courseId]: false });
+      setLoadingMyUploadRequests((prev) => ({ ...prev, [courseId]: false }));
     }
   };
 
