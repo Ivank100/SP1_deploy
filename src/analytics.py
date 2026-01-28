@@ -3,13 +3,14 @@
 Analytics utilities for instructor dashboard: clustering, trends, metrics.
 """
 from typing import List, Dict, Any, Tuple, Optional
+import math
 from collections import defaultdict
 from datetime import datetime, timedelta
 import json
 
 from .db import get_conn, get_lecture, list_lectures, get_lecture_transcript
 
-PERCENT_BOUNDS = [0, 10, 25, 50, 75, 100]
+BIN_SIZE_MIN = 15
 
 
 def _estimate_duration_minutes(lecture_id: int, lecture_row: Optional[Tuple[Any, ...]] = None) -> float:
@@ -52,26 +53,21 @@ def _estimate_duration_minutes(lecture_id: int, lecture_row: Optional[Tuple[Any,
     return min(max(duration_minutes, 10.0), 240.0)
 
 
-def _count_by_percent_bins(
+def _count_by_minute_bins(
     timestamps: List[datetime],
-    duration_minutes: float,
-    percent_bounds: List[int],
+    bin_size_minutes: int,
+    bin_count: int,
 ) -> List[int]:
-    if not timestamps or duration_minutes <= 0:
-        return [0 for _ in range(len(percent_bounds) - 1)]
+    if not timestamps or bin_count <= 0 or bin_size_minutes <= 0:
+        return [0 for _ in range(max(bin_count, 0))]
     start_time = timestamps[0]
-    counts = [0 for _ in range(len(percent_bounds) - 1)]
-    total_seconds = duration_minutes * 60.0
+    counts = [0 for _ in range(bin_count)]
     for ts in timestamps:
         delta = max((ts - start_time).total_seconds(), 0.0)
-        pct = min(max((delta / total_seconds) * 100.0, 0.0), 100.0)
-        idx = None
-        for i in range(len(percent_bounds) - 1):
-            if pct >= percent_bounds[i] and pct < percent_bounds[i + 1]:
-                idx = i
-                break
-        if idx is None:
-            idx = len(counts) - 1
+        delta_minutes = delta / 60.0
+        idx = int(delta_minutes // bin_size_minutes)
+        if idx >= bin_count:
+            idx = bin_count - 1
         counts[idx] += 1
     return counts
 from .embedding_model import embed_texts
@@ -416,8 +412,9 @@ def get_lecture_analytics(
         }
 
     duration_minutes = _estimate_duration_minutes(lecture_id)
-    lecture_counts = _count_by_percent_bins(timestamps, duration_minutes, PERCENT_BOUNDS)
-    bin_count = len(lecture_counts)
+    display_duration = max(float(BIN_SIZE_MIN), duration_minutes)
+    bin_count = max(1, int(math.ceil(display_duration / BIN_SIZE_MIN)))
+    lecture_counts = _count_by_minute_bins(timestamps, BIN_SIZE_MIN, bin_count)
 
     course_avg_counts = [0.0 for _ in range(bin_count)]
     if course_id:
@@ -447,14 +444,11 @@ def get_lecture_analytics(
         if by_lecture:
             sum_counts = [0 for _ in range(bin_count)]
             lecture_count = 0
-            duration_cache: Dict[int, float] = {}
             for lect_id, times in by_lecture.items():
                 if not times:
                     continue
                 times.sort()
-                if lect_id not in duration_cache:
-                    duration_cache[lect_id] = _estimate_duration_minutes(lect_id)
-                counts = _count_by_percent_bins(times, duration_cache[lect_id], PERCENT_BOUNDS)
+                counts = _count_by_minute_bins(times, BIN_SIZE_MIN, bin_count)
                 sum_counts = [sum_counts[i] + counts[i] for i in range(bin_count)]
                 lecture_count += 1
 
@@ -462,17 +456,15 @@ def get_lecture_analytics(
                 course_avg_counts = [c / lecture_count for c in sum_counts]
 
     peak_idx = max(range(len(lecture_counts)), key=lambda idx: lecture_counts[idx])
-    peak_start = PERCENT_BOUNDS[peak_idx]
-    peak_end = PERCENT_BOUNDS[peak_idx + 1]
-    peak_start_min = int(round(duration_minutes * peak_start / 100.0))
-    peak_end_min = int(round(duration_minutes * peak_end / 100.0))
+    peak_start_min = peak_idx * BIN_SIZE_MIN
+    peak_end_min = (peak_idx + 1) * BIN_SIZE_MIN
     peak_range = f"{peak_start_min}-{peak_end_min} min"
 
     for idx in range(bin_count):
-        start_pct = PERCENT_BOUNDS[idx]
-        end_pct = PERCENT_BOUNDS[idx + 1]
-        start_min = int(round(duration_minutes * start_pct / 100.0))
-        end_min = int(round(duration_minutes * end_pct / 100.0))
+        start_min = idx * BIN_SIZE_MIN
+        end_min = (idx + 1) * BIN_SIZE_MIN
+        start_pct = (start_min / (bin_count * BIN_SIZE_MIN)) * 100.0
+        end_pct = (end_min / (bin_count * BIN_SIZE_MIN)) * 100.0
         bins.append(
             {
                 "start_pct": start_pct,

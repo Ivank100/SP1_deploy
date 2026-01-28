@@ -335,9 +335,9 @@ export default function LecturePage() {
       courseQuestionTotal >= 5 || (courseLectureCount > 0 && courseQuestionTotal >= courseLectureCount);
     const maxValue = Math.max(1, ...lectureCounts, ...(courseAvgEligible ? courseCounts : []));
 
-    const width = 640;
-    const height = 220;
-    const padding = 24;
+    const width = 760;
+    const height = 260;
+    const padding = 32;
     const totalPoints = bins.length + 2;
     const xStep = totalPoints > 1 ? (width - padding * 2) / (totalPoints - 1) : 0;
 
@@ -413,9 +413,13 @@ export default function LecturePage() {
     const lectureSegments = buildSegments(lectureSeries);
     const courseSegments = courseAvgEligible ? buildSegments(courseSeries) : [];
 
+    const binLabelPositions = bins.map((_, idx) => ({
+      leftPct: ((padding + (idx + 1) * xStep) / width) * 100,
+    }));
+
     return (
-      <div>
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-56">
+      <div className="relative">
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-64">
           <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#E5E7EB" strokeWidth="1" />
           <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#E5E7EB" strokeWidth="1" />
 
@@ -465,30 +469,19 @@ export default function LecturePage() {
             );
           })}
         </svg>
-        <div className="flex justify-between text-xs text-gray-500 mt-2">
-          <span>
-            {bins[0].start_min ?? bins[0].start_pct}-{bins[0].end_min ?? bins[0].end_pct}{' '}
-            {bins[0].start_min != null ? 'min' : '%'}
-          </span>
-          <span>
-            {bins[bins.length - 1].start_min ?? bins[bins.length - 1].start_pct}-
-            {bins[bins.length - 1].end_min ?? bins[bins.length - 1].end_pct}{' '}
-            {bins[bins.length - 1].end_min != null ? 'min' : '%'}
-          </span>
-        </div>
         {bins.some((bin) => bin.start_min != null && bin.end_min != null) && (
-          <div
-            className="mt-2 grid text-[10px] text-gray-400"
-            style={{ gridTemplateColumns: `repeat(${bins.length}, minmax(0, 1fr))` }}
-          >
+          <div className="relative mt-2 h-6 text-[10px] text-gray-500">
             {bins.map((bin, idx) => {
               if (bin.start_min == null || bin.end_min == null) {
-                return <span key={`bin-midpoint-${idx}`} />;
+                return null;
               }
-              const midpoint = Math.round((bin.start_min + bin.end_min) / 2);
               return (
-                <span key={`bin-midpoint-${idx}`} className="text-center">
-                  {midpoint} min
+                <span
+                  key={`bin-range-${idx}`}
+                  className="absolute whitespace-nowrap"
+                  style={{ left: `${binLabelPositions[idx].leftPct}%`, transform: 'translateX(-50%)' }}
+                >
+                  {bin.start_min}-{bin.end_min} min
                 </span>
               );
             })}
