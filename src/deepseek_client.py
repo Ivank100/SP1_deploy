@@ -39,13 +39,20 @@ class DeepSeekClient:
         return [item["embedding"] for item in data["data"]]
 
        # ---- chat / LLM ----
-    def chat(self, messages, model: str = "openrouter/auto", temperature: float = 0.2) -> str:
+    def chat(
+        self,
+        messages,
+        model: str = "openrouter/auto",
+        temperature: float = 0.2,
+        max_tokens: int = 1200,
+    ) -> str:
         # OpenRouter is OpenAI-compatible: /chat/completions
         url = f"{self.base_url}/chat/completions"
         payload = {
             "model": model,        # you can swap to any OpenRouter model id
             "messages": messages,
             "temperature": temperature,
+            "max_tokens": max_tokens,
         }
         resp = self.session.post(url, json=payload)
 

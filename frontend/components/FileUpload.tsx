@@ -6,9 +6,10 @@ import { apiClient } from '@/lib/api';
 interface FileUploadProps {
   courseId: number | null;
   onUploadSuccess: () => void;
+  mode?: 'direct' | 'request';
 }
 
-export default function FileUpload({ courseId, onUploadSuccess }: FileUploadProps) {
+export default function FileUpload({ courseId, onUploadSuccess, mode = 'direct' }: FileUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -39,7 +40,11 @@ export default function FileUpload({ courseId, onUploadSuccess }: FileUploadProp
     setError(null);
 
     try {
-      await apiClient.uploadLectureToCourse(courseId, file);
+      if (mode === 'request') {
+        await apiClient.requestUploadToCourse(courseId, file);
+      } else {
+        await apiClient.uploadLectureToCourse(courseId, file);
+      }
       onUploadSuccess();
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -80,7 +85,9 @@ export default function FileUpload({ courseId, onUploadSuccess }: FileUploadProp
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-              <p className="text-sm text-gray-600">Uploading and processing...</p>
+              <p className="text-sm text-gray-600">
+                {mode === 'request' ? 'Submitting for approval...' : 'Uploading and processing...'}
+              </p>
             </>
           ) : (
             <>
@@ -90,13 +97,20 @@ export default function FileUpload({ courseId, onUploadSuccess }: FileUploadProp
               <p className="mb-2 text-sm text-gray-500">
                 {courseId ? (
                   <>
-                    <span className="font-semibold">Click to upload</span> or drag and drop
+                    <span className="font-semibold">
+                      {mode === 'request' ? 'Click to submit' : 'Click to upload'}
+                    </span>{' '}
+                    or drag and drop
                   </>
                 ) : (
                   'Select a course to enable uploads'
                 )}
               </p>
-              <p className="text-xs text-gray-500">PDF, audio, or slides (MAX. 50MB)</p>
+              <p className="text-xs text-gray-500">
+                {mode === 'request'
+                  ? 'PDF, audio, or slides (pending approval)'
+                  : 'PDF, audio, or slides (MAX. 50MB)'}
+              </p>
             </>
           )}
         </div>

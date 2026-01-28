@@ -7,7 +7,73 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 import json
 
-from .db import get_conn, get_lecture, list_lectures
+from .db import get_conn, get_lecture, list_lectures, get_lecture_transcript
+
+PERCENT_BOUNDS = [0, 10, 25, 50, 75, 100]
+
+
+def _estimate_duration_minutes(lecture_id: int, lecture_row: Optional[Tuple[Any, ...]] = None) -> float:
+    lecture = lecture_row or get_lecture(lecture_id)
+    if not lecture:
+        return 60.0
+    page_count = lecture[3] or 0
+    file_type = lecture[7] or "pdf"
+    course_id = lecture[6]
+
+    duration_minutes: Optional[float] = None
+    if course_id:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT duration_minutes
+                FROM courses
+                WHERE id = %s
+                """,
+                (course_id,),
+            )
+            row = cur.fetchone()
+            if row and row[0]:
+                duration_minutes = float(row[0])
+    if duration_minutes is None:
+        if file_type == "audio":
+            transcript = get_lecture_transcript(lecture_id)
+            if transcript:
+                segments = transcript.get("segments") or []
+                max_end = max((seg.get("end") or 0) for seg in segments) if segments else 0
+                if max_end:
+                    duration_minutes = max_end / 60.0
+            if not duration_minutes:
+                duration_minutes = 90.0
+        elif file_type == "slides":
+            duration_minutes = max(10.0, float(page_count) * 1.5)
+        else:
+            duration_minutes = max(10.0, float(page_count) * 2.0)
+
+    return min(max(duration_minutes, 10.0), 240.0)
+
+
+def _count_by_percent_bins(
+    timestamps: List[datetime],
+    duration_minutes: float,
+    percent_bounds: List[int],
+) -> List[int]:
+    if not timestamps or duration_minutes <= 0:
+        return [0 for _ in range(len(percent_bounds) - 1)]
+    start_time = timestamps[0]
+    counts = [0 for _ in range(len(percent_bounds) - 1)]
+    total_seconds = duration_minutes * 60.0
+    for ts in timestamps:
+        delta = max((ts - start_time).total_seconds(), 0.0)
+        pct = min(max((delta / total_seconds) * 100.0, 0.0), 100.0)
+        idx = None
+        for i in range(len(percent_bounds) - 1):
+            if pct >= percent_bounds[i] and pct < percent_bounds[i + 1]:
+                idx = i
+                break
+        if idx is None:
+            idx = len(counts) - 1
+        counts[idx] += 1
+    return counts
 from .embedding_model import embed_texts
 
 
@@ -295,4 +361,137 @@ def get_all_queries(
         }
         for row in rows
     ]
+
+
+def get_lecture_analytics(
+    lecture_id: int,
+    course_id: Optional[int],
+) -> Dict[str, Any]:
+    """
+    Compute lecture-level analytics, including frequency polygon bins and baseline.
+    Bins are computed relative to the first question timestamp for the lecture.
+    """
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT created_at, question, user_id
+            FROM query_history
+            WHERE lecture_id = %s
+            ORDER BY created_at ASC
+            """,
+            (lecture_id,),
+        )
+        rows = cur.fetchall()
+
+    timestamps = [row[0] for row in rows if row[0]]
+    questions = [row[1] for row in rows if row[1]]
+    user_ids = {row[2] for row in rows if row[2]}
+
+    total_questions = len(timestamps)
+    active_students = len(user_ids)
+
+    top_confused_question = None
+    if questions:
+        counts: Dict[str, int] = defaultdict(int)
+        for q in questions:
+            key = q.strip().lower()
+            if key:
+                counts[key] += 1
+        if counts:
+            top_confused_question = max(counts.items(), key=lambda item: item[1])[0]
+
+    bins: List[Dict[str, Any]] = []
+    course_question_total = 0
+    course_lecture_count = 0
+    if not timestamps:
+        return {
+            "lecture_id": lecture_id,
+            "total_questions": total_questions,
+            "active_students": active_students,
+            "peak_confusion_range": None,
+            "top_confused_question": top_confused_question,
+            "bins": bins,
+            "course_question_total": course_question_total,
+            "course_lecture_count": course_lecture_count,
+        }
+
+    duration_minutes = _estimate_duration_minutes(lecture_id)
+    lecture_counts = _count_by_percent_bins(timestamps, duration_minutes, PERCENT_BOUNDS)
+    bin_count = len(lecture_counts)
+
+    course_avg_counts = [0.0 for _ in range(bin_count)]
+    if course_id:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT qh.lecture_id, qh.created_at
+                FROM query_history qh
+                JOIN lectures l ON l.id = qh.lecture_id
+                WHERE l.course_id = %s
+                  AND qh.lecture_id IS NOT NULL
+                  AND qh.lecture_id != %s
+                ORDER BY qh.lecture_id, qh.created_at ASC
+                """,
+                (course_id, lecture_id),
+            )
+            baseline_rows = cur.fetchall()
+
+        by_lecture: Dict[int, List[datetime]] = defaultdict(list)
+        for lect_id, created_at in baseline_rows:
+            if created_at:
+                by_lecture[lect_id].append(created_at)
+
+        course_question_total = len(baseline_rows)
+        course_lecture_count = len(by_lecture)
+
+        if by_lecture:
+            sum_counts = [0 for _ in range(bin_count)]
+            lecture_count = 0
+            duration_cache: Dict[int, float] = {}
+            for lect_id, times in by_lecture.items():
+                if not times:
+                    continue
+                times.sort()
+                if lect_id not in duration_cache:
+                    duration_cache[lect_id] = _estimate_duration_minutes(lect_id)
+                counts = _count_by_percent_bins(times, duration_cache[lect_id], PERCENT_BOUNDS)
+                sum_counts = [sum_counts[i] + counts[i] for i in range(bin_count)]
+                lecture_count += 1
+
+            if lecture_count > 0:
+                course_avg_counts = [c / lecture_count for c in sum_counts]
+
+    peak_idx = max(range(len(lecture_counts)), key=lambda idx: lecture_counts[idx])
+    peak_start = PERCENT_BOUNDS[peak_idx]
+    peak_end = PERCENT_BOUNDS[peak_idx + 1]
+    peak_start_min = int(round(duration_minutes * peak_start / 100.0))
+    peak_end_min = int(round(duration_minutes * peak_end / 100.0))
+    peak_range = f"{peak_start_min}-{peak_end_min} min"
+
+    for idx in range(bin_count):
+        start_pct = PERCENT_BOUNDS[idx]
+        end_pct = PERCENT_BOUNDS[idx + 1]
+        start_min = int(round(duration_minutes * start_pct / 100.0))
+        end_min = int(round(duration_minutes * end_pct / 100.0))
+        bins.append(
+            {
+                "start_pct": start_pct,
+                "end_pct": end_pct,
+                "start_min": start_min,
+                "end_min": end_min,
+                "count": lecture_counts[idx],
+                "course_avg": course_avg_counts[idx] if course_id else None,
+            }
+        )
+
+    return {
+        "lecture_id": lecture_id,
+        "total_questions": total_questions,
+        "active_students": active_students,
+        "peak_confusion_range": peak_range,
+        "top_confused_question": top_confused_question,
+        "bins": bins,
+        "course_question_total": course_question_total,
+        "course_lecture_count": course_lecture_count,
+    }
 

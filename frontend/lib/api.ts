@@ -51,6 +51,8 @@ export interface Lecture {
   course_id?: number | null;
   file_type: FileType;
   has_transcript: boolean;
+  created_by?: number | null;
+  created_by_role?: 'student' | 'instructor' | null;
 }
 
 export interface LectureListResponse {
@@ -91,11 +93,32 @@ export interface QueryHistoryItem {
   question: string;
   answer: string;
   created_at: string;
+  user_email?: string | null;
 }
 
 export interface QueryHistoryResponse {
   queries: QueryHistoryItem[];
   total: number;
+}
+
+export interface LectureAnalyticsBin {
+  start_pct: number;
+  end_pct: number;
+  start_min?: number | null;
+  end_min?: number | null;
+  count: number;
+  course_avg?: number | null;
+}
+
+export interface LectureAnalyticsResponse {
+  lecture_id: number;
+  total_questions: number;
+  active_students: number;
+  peak_confusion_range?: string | null;
+  top_confused_question?: string | null;
+  bins: LectureAnalyticsBin[];
+  course_question_total?: number | null;
+  course_lecture_count?: number | null;
 }
 
 export interface SummaryResponse {
@@ -173,7 +196,68 @@ export interface Course {
   created_at: string;
   lecture_count: number;
   lectures: Lecture[];
-  join_code: string;
+  join_code: string | null;
+  term_year?: number | null;
+  term_number?: number | null;
+  duration_minutes?: number | null;
+}
+
+export interface CourseStudent {
+  student_id: number;
+  student_email: string;
+  role: 'student' | 'ta';
+  section_id?: number | null;
+  section_name?: string | null;
+  group_id?: number | null;
+  group_name?: string | null;
+  questions_count: number;
+  last_active?: string | null;
+}
+
+export interface CourseSection {
+  id: number;
+  name: string;
+}
+
+export interface CourseSectionListResponse {
+  sections: CourseSection[];
+}
+
+export interface SectionGroup {
+  id: number;
+  name: string;
+}
+
+export interface SectionGroupListResponse {
+  groups: SectionGroup[];
+}
+
+export interface Announcement {
+  id: number;
+  message: string;
+  created_by?: number | null;
+  created_at?: string | null;
+}
+
+export interface AnnouncementListResponse {
+  announcements: Announcement[];
+}
+
+export interface UploadRequest {
+  id: number;
+  course_id: number;
+  student_id: number;
+  student_email?: string | null;
+  original_name: string;
+  file_type: string;
+  status: string;
+  created_at?: string | null;
+  reviewed_by?: number | null;
+  reviewed_at?: string | null;
+}
+
+export interface UploadRequestListResponse {
+  requests: UploadRequest[];
 }
 
 export interface CourseListResponse {
@@ -184,6 +268,9 @@ export interface CourseListResponse {
 export interface CreateCoursePayload {
   name: string;
   description?: string;
+  term_year?: number;
+  term_number?: number;
+  duration_minutes?: number;
 }
 
 export interface QueryCluster {
@@ -273,6 +360,10 @@ export const apiClient = {
     const response = await api.post('/api/courses/join', { code });
     return response.data;
   },
+  async leaveCourse(courseId: number): Promise<{ message: string }> {
+    const response = await api.delete(`/api/courses/${courseId}/leave`);
+    return response.data;
+  },
   async createCourse(payload: CreateCoursePayload): Promise<Course> {
     const response = await api.post<Course>('/api/courses', payload);
     return response.data;
@@ -281,8 +372,19 @@ export const apiClient = {
   await api.delete(`/api/courses/${courseId}`);
 },
 
-  async addStudentToCourse(courseId: number, email: string): Promise<{ message: string; student_id?: number; student_email: string }> {
-    const response = await api.post(`/api/courses/${courseId}/students`, { email });
+  async addStudentToCourse(
+    courseId: number,
+    email: string,
+    sectionId: number,
+    groupId?: number | null,
+    role: 'student' | 'ta' = 'student'
+  ): Promise<{ message: string; student_id?: number; student_email: string }> {
+    const response = await api.post(`/api/courses/${courseId}/students`, {
+      email,
+      section_id: sectionId,
+      group_id: groupId ?? null,
+      role,
+    });
     return response.data;
   },
 
@@ -291,8 +393,64 @@ export const apiClient = {
     return response.data;
   },
 
-  async getCourseStudents(courseId: number): Promise<{ student_id: number; student_email: string }[]> {
-    const response = await api.get(`/api/courses/${courseId}/students`);
+  async getCourseStudents(courseId: number): Promise<CourseStudent[]> {
+    const response = await api.get<CourseStudent[]>(`/api/courses/${courseId}/students`);
+    return response.data;
+  },
+
+  async updateStudentAssignment(
+    courseId: number,
+    studentId: number,
+    payload: { role?: 'student' | 'ta'; section_id?: number; group_id?: number | null }
+  ): Promise<{ message: string }> {
+    const response = await api.patch(`/api/courses/${courseId}/students/${studentId}`, payload);
+    return response.data;
+  },
+
+  async getCourseSections(courseId: number): Promise<CourseSectionListResponse> {
+    const response = await api.get<CourseSectionListResponse>(`/api/courses/${courseId}/sections`);
+    return response.data;
+  },
+
+  async createCourseSection(courseId: number, name: string): Promise<CourseSection> {
+    const response = await api.post<CourseSection>(`/api/courses/${courseId}/sections`, { name });
+    return response.data;
+  },
+
+  async deleteCourseSection(courseId: number, sectionId: number): Promise<{ message: string }> {
+    const response = await api.delete(`/api/courses/${courseId}/sections/${sectionId}`);
+    return response.data;
+  },
+
+  async getSectionGroups(courseId: number, sectionId: number): Promise<SectionGroupListResponse> {
+    const response = await api.get<SectionGroupListResponse>(`/api/courses/${courseId}/sections/${sectionId}/groups`);
+    return response.data;
+  },
+
+  async createSectionGroup(courseId: number, sectionId: number, name: string): Promise<SectionGroup> {
+    const response = await api.post<SectionGroup>(`/api/courses/${courseId}/sections/${sectionId}/groups`, { name });
+    return response.data;
+  },
+
+  async deleteSectionGroup(courseId: number, sectionId: number, groupId: number): Promise<{ message: string }> {
+    const response = await api.delete(`/api/courses/${courseId}/sections/${sectionId}/groups/${groupId}`);
+    return response.data;
+  },
+
+  async createAnnouncement(courseId: number, message: string): Promise<Announcement> {
+    const response = await api.post<Announcement>(`/api/courses/${courseId}/announcements`, { message });
+    return response.data;
+  },
+
+  async getAnnouncements(courseId: number): Promise<AnnouncementListResponse> {
+    const response = await api.get<AnnouncementListResponse>(`/api/courses/${courseId}/announcements`);
+    return response.data;
+  },
+
+  async exportCourseQuestions(courseId: number): Promise<Blob> {
+    const response = await api.get(`/api/courses/${courseId}/questions/export`, {
+      responseType: 'blob',
+    });
     return response.data;
   },
 
@@ -331,6 +489,47 @@ export const apiClient = {
     return response.data;
   },
 
+  async requestUploadToCourse(courseId: number, file: File): Promise<UploadRequest> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post<UploadRequest>(
+      `/api/courses/${courseId}/upload-requests`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
+  },
+
+  async getUploadRequests(courseId: number, status?: string): Promise<UploadRequestListResponse> {
+    const params: any = {};
+    if (status) params.status = status;
+    const response = await api.get<UploadRequestListResponse>(`/api/courses/${courseId}/upload-requests`, { params });
+    return response.data;
+  },
+
+  async getMyUploadRequests(courseId: number, status?: string): Promise<UploadRequestListResponse> {
+    const params: any = {};
+    if (status) params.status = status;
+    const response = await api.get<UploadRequestListResponse>(`/api/courses/${courseId}/upload-requests/mine`, { params });
+    return response.data;
+  },
+
+  async approveUploadRequest(courseId: number, requestId: number): Promise<UploadResponse> {
+    const response = await api.post<UploadResponse>(`/api/courses/${courseId}/upload-requests/${requestId}/approve`);
+    return response.data;
+  },
+
+  async rejectUploadRequest(courseId: number, requestId: number): Promise<{ message: string }> {
+    const response = await api.post<{ message: string }>(
+      `/api/courses/${courseId}/upload-requests/${requestId}/reject`
+    );
+    return response.data;
+  },
+
   // Legacy upload endpoint (defaults to general course)
   async uploadLecture(file: File): Promise<UploadResponse> {
     const formData = new FormData();
@@ -354,6 +553,10 @@ export const apiClient = {
 
   async getLecture(id: number): Promise<Lecture> {
     const response = await api.get<Lecture>(`/api/lectures/${id}`);
+    return response.data;
+  },
+  async getLectureAnalytics(lectureId: number): Promise<LectureAnalyticsResponse> {
+    const response = await api.get<LectureAnalyticsResponse>(`/api/lectures/${lectureId}/analytics`);
     return response.data;
   },
 

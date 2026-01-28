@@ -1,8 +1,12 @@
 from collections import defaultdict
+import os
+from pathlib import Path
+from uuid import uuid4
 from fastapi import APIRouter, HTTPException, UploadFile, File, status, Depends
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, EmailStr
 
+from ...config import UPLOAD_DIR
 from ...db import (
     list_courses,
     list_lectures,
@@ -16,7 +20,9 @@ from ...db import (
     init_schema,
     get_user_by_id,
     delete_course_as_instructor,
-    enroll_student_by_code
+    enroll_student_by_code,
+    get_user_courses,
+    get_or_create_default_section,
 )
 from ..middleware.auth import get_current_user, get_current_instructor
 from ...rag_query import answer_question
@@ -29,10 +35,52 @@ from ..models import (
     UploadResponse,
     QueryResponse,
     CourseQueryRequest,
+    CourseStudentResponse,
+    CourseSectionListResponse,
+    CourseSectionResponse,
+    CreateSectionRequest,
+    SectionGroupListResponse,
+    SectionGroupResponse,
+    CreateGroupRequest,
+    UpdateStudentAssignmentRequest,
+    CreateAnnouncementRequest,
+    AnnouncementListResponse,
+    AnnouncementResponse,
+    UploadRequestResponse,
+    UploadRequestListResponse,
 )
 from .lectures import process_lecture_upload
+from ...rag_index import ingest_pdf, ingest_audio, ingest_slides
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
+
+# Upload validation (reuse same extensions as lecture uploads)
+MAX_FILE_SIZE = 50 * 1024 * 1024
+PDF_EXTENSIONS = {".pdf"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a"}
+SLIDE_EXTENSIONS = {".pptx", ".ppt"}
+ALLOWED_EXTENSIONS = PDF_EXTENSIONS | AUDIO_EXTENSIONS | SLIDE_EXTENSIONS
+
+
+def _file_type_from_extension(file_ext: str) -> Optional[str]:
+    if file_ext in PDF_EXTENSIONS:
+        return "pdf"
+    if file_ext in AUDIO_EXTENSIONS:
+        return "audio"
+    if file_ext in SLIDE_EXTENSIONS:
+        return "slides"
+    return None
+
+
+def _is_ta_for_course(user_id: int, course_id: int) -> bool:
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT role FROM user_courses WHERE user_id = %s AND course_id = %s",
+            (user_id, course_id),
+        )
+        row = cur.fetchone()
+        return bool(row and row[0] == "ta")
 
 
 @router.get("", response_model=CourseListResponse)
@@ -43,8 +91,7 @@ async def list_all_courses(current_user: dict = Depends(get_current_user)):
     
     # Filter courses based on user role and enrollment
     if current_user["role"] == "student":
-        # Students only see courses they're enrolled in
-        from ...db import get_user_courses
+        # Students only see courses they're enrolled in (user_courses table)
         user_course_ids = get_user_courses(current_user["id"])
         courses = [c for c in courses if c[0] in user_course_ids]
         lectures = [l for l in lectures if l[6] in user_course_ids]
@@ -96,6 +143,8 @@ async def list_all_courses(current_user: dict = Depends(get_current_user)):
                 course_id=lect[6],
                 file_type=lect[7],
                 has_transcript=lect[8],
+                created_by=lect[9],
+                created_by_role=lect[10],
             )
             for lect in lectures_by_course.get(course_id, [])
         ]
@@ -105,7 +154,10 @@ async def list_all_courses(current_user: dict = Depends(get_current_user)):
                 name=course[1],
                 description=course[2],
                 created_at=course[3],
-                join_code=course[4], # <--- Add this (ensure index 4 matches your db.py select)
+                join_code=course[4],
+                term_year=course[5],
+                term_number=course[6],
+                duration_minutes=course[7],
                 lecture_count=len(course_lectures),
                 lectures=course_lectures,
             )
@@ -127,7 +179,20 @@ async def create_new_course(
             detail="Course name cannot be empty",
         )
 
-    course_id = create_course(name=name, description=request.description, created_by=current_user["id"])
+    if request.duration_minutes is not None and request.duration_minutes not in {60, 90, 120, 180}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Course duration must be 60, 90, 120, or 180 minutes",
+        )
+
+    course_id = create_course(
+        name=name,
+        description=request.description,
+        created_by=current_user["id"],
+        term_year=request.term_year,
+        term_number=request.term_number,
+        duration_minutes=request.duration_minutes or 90,
+    )
     
     # Automatically assign instructor to the course they created
     assign_instructor_to_course(course_id, current_user["id"], assigned_by=current_user["id"])
@@ -143,7 +208,10 @@ async def create_new_course(
         name=course[1],
         description=course[2],
         created_at=course[3],
-        join_code=course[4], # <--- Add this line
+        join_code=course[4],
+        term_year=course[5],
+        term_number=course[6],
+        duration_minutes=course[7],
         lecture_count=0,
         lectures=[],
     )
@@ -174,7 +242,315 @@ async def upload_lecture_to_course(
             detail="You don't have access to this course",
         )
 
+    # Students must request approval unless they are TA
+    if current_user["role"] == "student" and not _is_ta_for_course(current_user["id"], course_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Students must request upload approval from instructor",
+        )
+
     return await process_lecture_upload(file, course_id=course_id, created_by=current_user["id"])
+
+
+@router.post(
+    "/{course_id}/upload-requests",
+    response_model=UploadRequestResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_upload_request(
+    course_id: int,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Students submit an upload request; instructors/TAs can upload directly."""
+    course = get_course(course_id)
+    if not course:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Course with id {course_id} not found",
+        )
+
+    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this course",
+        )
+
+    if current_user["role"] == "student" and _is_ta_for_course(current_user["id"], course_id):
+        # TA can upload directly
+        await process_lecture_upload(file, course_id=course_id, created_by=current_user["id"])
+        return UploadRequestResponse(
+            id=0,
+            course_id=course_id,
+            student_id=current_user["id"],
+            student_email=current_user["email"],
+            original_name=file.filename or "upload",
+            file_type="direct",
+            status="approved",
+        )
+
+    if current_user["role"] != "student":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Use direct upload for instructors",
+        )
+
+    file_ext = Path(file.filename or "").suffix.lower()
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file type. Allowed: PDF, MP3, WAV, M4A, PPT, PPTX.",
+        )
+
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File too large. Maximum size is {MAX_FILE_SIZE / (1024*1024):.0f}MB",
+        )
+
+    file_type = _file_type_from_extension(file_ext)
+    if not file_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported file type",
+        )
+
+    pending_dir = os.path.join(UPLOAD_DIR, "pending")
+    os.makedirs(pending_dir, exist_ok=True)
+    safe_name = f"{uuid4().hex}{file_ext}"
+    pending_path = os.path.join(pending_dir, safe_name)
+    with open(pending_path, "wb") as handle:
+        handle.write(contents)
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO lecture_upload_requests (course_id, student_id, original_name, file_path, file_type, status)
+            VALUES (%s, %s, %s, %s, %s, 'pending')
+            RETURNING id, created_at
+            """,
+            (course_id, current_user["id"], file.filename or "upload", pending_path, file_type),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    return UploadRequestResponse(
+        id=row[0],
+        course_id=course_id,
+        student_id=current_user["id"],
+        student_email=current_user["email"],
+        original_name=file.filename or "upload",
+        file_type=file_type,
+        status="pending",
+        created_at=row[1].isoformat() if row[1] else None,
+    )
+
+
+@router.get("/{course_id}/upload-requests", response_model=UploadRequestListResponse)
+async def list_upload_requests(
+    course_id: int,
+    status: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """List upload requests (instructor/TA only)."""
+    if current_user["role"] != "instructor" and not _is_ta_for_course(current_user["id"], course_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Instructor or TA access required",
+        )
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        base_query = """
+            SELECT r.id, r.course_id, r.student_id, u.email, r.original_name, r.file_type, r.status,
+                   r.created_at, r.reviewed_by, r.reviewed_at
+            FROM lecture_upload_requests r
+            JOIN users u ON u.id = r.student_id
+            WHERE r.course_id = %s
+        """
+        params: List[Any] = [course_id]
+        if status:
+            base_query += " AND r.status = %s"
+            params.append(status)
+        base_query += " ORDER BY r.created_at DESC"
+        cur.execute(base_query, tuple(params))
+        rows = cur.fetchall()
+
+    return UploadRequestListResponse(
+        requests=[
+            UploadRequestResponse(
+                id=row[0],
+                course_id=row[1],
+                student_id=row[2],
+                student_email=row[3],
+                original_name=row[4],
+                file_type=row[5],
+                status=row[6],
+                created_at=row[7].isoformat() if row[7] else None,
+                reviewed_by=row[8],
+                reviewed_at=row[9].isoformat() if row[9] else None,
+            )
+            for row in rows
+        ]
+    )
+
+
+@router.get("/{course_id}/upload-requests/mine", response_model=UploadRequestListResponse)
+async def list_my_upload_requests(
+    course_id: int,
+    status: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """List current student's own upload requests."""
+    if current_user["role"] != "student":
+        raise HTTPException(status_code=403, detail="Student access required")
+
+    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this course")
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        base_query = """
+            SELECT r.id, r.course_id, r.student_id, u.email, r.original_name, r.file_type, r.status,
+                   r.created_at, r.reviewed_by, r.reviewed_at
+            FROM lecture_upload_requests r
+            JOIN users u ON u.id = r.student_id
+            WHERE r.course_id = %s AND r.student_id = %s
+        """
+        params: List[Any] = [course_id, current_user["id"]]
+        if status:
+            base_query += " AND r.status = %s"
+            params.append(status)
+        base_query += " ORDER BY r.created_at DESC"
+        cur.execute(base_query, tuple(params))
+        rows = cur.fetchall()
+
+    return UploadRequestListResponse(
+        requests=[
+            UploadRequestResponse(
+                id=row[0],
+                course_id=row[1],
+                student_id=row[2],
+                student_email=row[3],
+                original_name=row[4],
+                file_type=row[5],
+                status=row[6],
+                created_at=row[7].isoformat() if row[7] else None,
+                reviewed_by=row[8],
+                reviewed_at=row[9].isoformat() if row[9] else None,
+            )
+            for row in rows
+        ]
+    )
+
+
+@router.post("/{course_id}/upload-requests/{request_id}/approve", response_model=UploadResponse)
+async def approve_upload_request(
+    course_id: int,
+    request_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """Approve and ingest an upload request."""
+    if current_user["role"] != "instructor" and not _is_ta_for_course(current_user["id"], course_id):
+        raise HTTPException(status_code=403, detail="Instructor or TA access required")
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, student_id, original_name, file_path, file_type, status
+            FROM lecture_upload_requests
+            WHERE id = %s AND course_id = %s
+            """,
+            (request_id, course_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Upload request not found")
+        if row[5] != "pending":
+            raise HTTPException(status_code=400, detail="Upload request already processed")
+
+    request_id, student_id, original_name, file_path, file_type, _ = row
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=400, detail="Pending file not found")
+
+    if file_type == "pdf":
+        lecture_id = ingest_pdf(file_path, original_name=original_name, course_id=course_id, created_by=student_id)
+    elif file_type == "audio":
+        lecture_id = ingest_audio(file_path, original_name=original_name, course_id=course_id, created_by=student_id)
+    else:
+        lecture_id = ingest_slides(file_path, original_name=original_name, course_id=course_id, created_by=student_id)
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE lecture_upload_requests
+            SET status = 'approved', reviewed_by = %s, reviewed_at = NOW()
+            WHERE id = %s
+            """,
+            (current_user["id"], request_id),
+        )
+        conn.commit()
+
+    try:
+        os.remove(file_path)
+    except OSError:
+        pass
+
+    return UploadResponse(
+        lecture_id=lecture_id,
+        message="Upload approved and processed successfully",
+        status="completed",
+    )
+
+
+@router.post("/{course_id}/upload-requests/{request_id}/reject", status_code=status.HTTP_200_OK)
+async def reject_upload_request(
+    course_id: int,
+    request_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """Reject an upload request."""
+    if current_user["role"] != "instructor" and not _is_ta_for_course(current_user["id"], course_id):
+        raise HTTPException(status_code=403, detail="Instructor or TA access required")
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT file_path, status
+            FROM lecture_upload_requests
+            WHERE id = %s AND course_id = %s
+            """,
+            (request_id, course_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Upload request not found")
+        if row[1] != "pending":
+            raise HTTPException(status_code=400, detail="Upload request already processed")
+
+        cur.execute(
+            """
+            UPDATE lecture_upload_requests
+            SET status = 'rejected', reviewed_by = %s, reviewed_at = NOW()
+            WHERE id = %s
+            """,
+            (current_user["id"], request_id),
+        )
+        conn.commit()
+
+    file_path = row[0]
+    if file_path and os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+
+    return {"message": "Upload request rejected"}
 
 
 @router.post("/{course_id}/query", response_model=QueryResponse)
@@ -232,6 +608,9 @@ async def query_course(
 class AddStudentRequest(BaseModel):
     """Request to add a student to a course by email."""
     email: EmailStr
+    section_id: Optional[int] = None
+    group_id: Optional[int] = None
+    role: Optional[str] = "student"
 
 
 class AddStudentResponse(BaseModel):
@@ -384,9 +763,44 @@ async def add_student_to_course(
             detail=f"User {request.email} is not a student (role: {student_role})",
         )
     
-    # Add student to course
+    role = (request.role or "student").lower()
+    if role not in ("student", "ta"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Role must be student or ta",
+        )
+
+    # Ensure section exists (required)
+    section_id = request.section_id or get_or_create_default_section(course_id)
+
+    # Validate section belongs to course
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM course_sections WHERE id = %s AND course_id = %s",
+            (section_id, course_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Selected section does not belong to this course",
+            )
+
+        group_id = request.group_id
+        if group_id is not None:
+            cur.execute(
+                "SELECT 1 FROM section_groups WHERE id = %s AND section_id = %s",
+                (group_id, section_id),
+            )
+            if not cur.fetchone():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Selected group does not belong to this section",
+                )
+
+    # Add student to course (insert into user_courses so they see it on their dashboard)
     try:
-        add_user_to_course(student_id, course_id)
+        add_user_to_course(student_id, course_id, role, section_id=section_id, group_id=request.group_id)
         return AddStudentResponse(
             message=f"Student {request.email} successfully added to course",
             student_id=student_id,
@@ -456,10 +870,45 @@ async def remove_student_from_course(
     return {"message": f"Student removed from course successfully"}
 
 
-class CourseStudentResponse(BaseModel):
-    """Response for course student."""
-    student_id: int
-    student_email: str
+@router.delete("/{course_id}/leave", status_code=status.HTTP_200_OK)
+async def leave_course(
+    course_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Allow a student to leave a course they are enrolled in.
+    """
+    if current_user["role"] != "student":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Student access required",
+        )
+
+    # Check if course exists
+    course = get_course(course_id)
+    if not course:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Course with id {course_id} not found",
+        )
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM user_courses
+            WHERE user_id = %s AND course_id = %s
+            """,
+            (current_user["id"], course_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="You are not enrolled in this course",
+            )
+        conn.commit()
+
+    return {"message": "Left course successfully"}
 
 
 @router.get("/{course_id}/students", response_model=List[CourseStudentResponse])
@@ -485,25 +934,438 @@ async def get_course_students(
             detail="You don't have access to this course",
         )
     
-    # Get all students enrolled in the course
+    # Get all students enrolled in the course with section/group/activity
     init_schema()
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT u.id, u.email
+            SELECT u.id,
+                   u.email,
+                   uc.role,
+                   uc.section_id,
+                   s.name AS section_name,
+                   uc.group_id,
+                   g.name AS group_name,
+                   COALESCE(COUNT(CASE WHEN (l.course_id = %s OR (qh.course_id = %s AND qh.lecture_id IS NULL)) THEN qh.id END), 0) AS questions_count,
+                   MAX(CASE WHEN (l.course_id = %s OR (qh.course_id = %s AND qh.lecture_id IS NULL)) THEN qh.created_at END) AS last_active
             FROM users u
             JOIN user_courses uc ON u.id = uc.user_id
-            WHERE uc.course_id = %s AND u.role = 'student'
+            LEFT JOIN course_sections s ON s.id = uc.section_id
+            LEFT JOIN section_groups g ON g.id = uc.group_id
+            LEFT JOIN query_history qh
+              ON qh.user_id = u.id
+            LEFT JOIN lectures l ON l.id = qh.lecture_id
+            WHERE uc.course_id = %s AND u.role IN ('student', 'ta')
+            GROUP BY u.id, u.email, uc.role, uc.section_id, s.name, uc.group_id, g.name
             ORDER BY u.email
             """,
-            (course_id,),
+            (course_id, course_id, course_id, course_id, course_id),
         )
         students = cur.fetchall()
     
     return [
-        CourseStudentResponse(student_id=row[0], student_email=row[1])
+        CourseStudentResponse(
+            student_id=row[0],
+            student_email=row[1],
+            role=row[2],
+            section_id=row[3],
+            section_name=row[4],
+            group_id=row[5],
+            group_name=row[6],
+            questions_count=row[7] or 0,
+            last_active=row[8].isoformat() if row[8] else None,
+        )
         for row in students
     ]
+
+
+@router.patch("/{course_id}/students/{student_id}", status_code=status.HTTP_200_OK)
+async def update_student_assignment(
+    course_id: int,
+    student_id: int,
+    payload: UpdateStudentAssignmentRequest,
+    current_user: dict = Depends(get_current_instructor),
+):
+    """Update student role/section/group within a course."""
+    # Check course access
+    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this course")
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        # Validate student enrollment
+        cur.execute(
+            "SELECT 1 FROM user_courses WHERE user_id = %s AND course_id = %s",
+            (student_id, course_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Student is not enrolled in this course")
+
+        role = payload.role.lower() if payload.role else None
+        if role and role not in ("student", "ta"):
+            raise HTTPException(status_code=400, detail="Role must be student or ta")
+
+        section_id = payload.section_id
+        group_id = payload.group_id
+
+        if section_id is not None:
+            cur.execute(
+                "SELECT 1 FROM course_sections WHERE id = %s AND course_id = %s",
+                (section_id, course_id),
+            )
+            if not cur.fetchone():
+                raise HTTPException(status_code=400, detail="Selected section does not belong to this course")
+
+        if group_id is not None:
+            cur.execute(
+                "SELECT 1 FROM section_groups WHERE id = %s",
+                (group_id,),
+            )
+            group = cur.fetchone()
+            if not group:
+                raise HTTPException(status_code=400, detail="Selected group does not exist")
+
+            if section_id is not None:
+                cur.execute(
+                    "SELECT 1 FROM section_groups WHERE id = %s AND section_id = %s",
+                    (group_id, section_id),
+                )
+                if not cur.fetchone():
+                    raise HTTPException(status_code=400, detail="Selected group does not belong to this section")
+
+        cur.execute(
+            """
+            UPDATE user_courses
+            SET role = COALESCE(%s, role),
+                section_id = COALESCE(%s, section_id),
+                group_id = %s
+            WHERE user_id = %s AND course_id = %s
+            """,
+            (role, section_id, group_id, student_id, course_id),
+        )
+        conn.commit()
+
+    return {"message": "Student updated"}
+
+
+@router.get("/{course_id}/sections", response_model=CourseSectionListResponse)
+async def list_sections(
+    course_id: int,
+    current_user: dict = Depends(get_current_instructor),
+):
+    """List sections for a course."""
+    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this course")
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, name FROM course_sections WHERE course_id = %s ORDER BY created_at ASC",
+            (course_id,),
+        )
+        rows = cur.fetchall()
+
+    return CourseSectionListResponse(
+        sections=[CourseSectionResponse(id=row[0], name=row[1]) for row in rows]
+    )
+
+
+@router.post("/{course_id}/sections", response_model=CourseSectionResponse, status_code=status.HTTP_201_CREATED)
+async def create_section(
+    course_id: int,
+    payload: CreateSectionRequest,
+    current_user: dict = Depends(get_current_instructor),
+):
+    """Create a section for a course."""
+    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this course")
+
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Section name is required")
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO course_sections (course_id, name)
+            VALUES (%s, %s)
+            ON CONFLICT (course_id, name) DO NOTHING
+            RETURNING id, name
+            """,
+            (course_id, name),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+        if not row:
+            # Section already exists
+            cur.execute(
+                "SELECT id, name FROM course_sections WHERE course_id = %s AND name = %s",
+                (course_id, name),
+            )
+            row = cur.fetchone()
+
+    return CourseSectionResponse(id=row[0], name=row[1])
+
+
+@router.delete("/{course_id}/sections/{section_id}", status_code=status.HTTP_200_OK)
+async def delete_section(
+    course_id: int,
+    section_id: int,
+    current_user: dict = Depends(get_current_instructor),
+):
+    """Delete a section if no students are assigned."""
+    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this course")
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM course_sections WHERE id = %s AND course_id = %s",
+            (section_id, course_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Section not found")
+
+        cur.execute(
+            "SELECT COUNT(*) FROM user_courses WHERE course_id = %s AND section_id = %s",
+            (course_id, section_id),
+        )
+        if cur.fetchone()[0] > 0:
+            raise HTTPException(status_code=400, detail="Cannot delete a section with students")
+
+        cur.execute("DELETE FROM course_sections WHERE id = %s", (section_id,))
+        conn.commit()
+
+    return {"message": "Section deleted"}
+
+
+@router.get("/{course_id}/sections/{section_id}/groups", response_model=SectionGroupListResponse)
+async def list_groups(
+    course_id: int,
+    section_id: int,
+    current_user: dict = Depends(get_current_instructor),
+):
+    """List groups for a section."""
+    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this course")
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT g.id, g.name
+            FROM section_groups g
+            JOIN course_sections s ON s.id = g.section_id
+            WHERE s.id = %s AND s.course_id = %s
+            ORDER BY g.created_at ASC
+            """,
+            (section_id, course_id),
+        )
+        rows = cur.fetchall()
+
+    return SectionGroupListResponse(groups=[SectionGroupResponse(id=row[0], name=row[1]) for row in rows])
+
+
+@router.post("/{course_id}/sections/{section_id}/groups", response_model=SectionGroupResponse, status_code=status.HTTP_201_CREATED)
+async def create_group(
+    course_id: int,
+    section_id: int,
+    payload: CreateGroupRequest,
+    current_user: dict = Depends(get_current_instructor),
+):
+    """Create a group for a section."""
+    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this course")
+
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Group name is required")
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM course_sections WHERE id = %s AND course_id = %s",
+            (section_id, course_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Section not found")
+
+        cur.execute(
+            """
+            INSERT INTO section_groups (section_id, name)
+            VALUES (%s, %s)
+            ON CONFLICT (section_id, name) DO NOTHING
+            RETURNING id, name
+            """,
+            (section_id, name),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+        if not row:
+            cur.execute(
+                "SELECT id, name FROM section_groups WHERE section_id = %s AND name = %s",
+                (section_id, name),
+            )
+            row = cur.fetchone()
+
+    return SectionGroupResponse(id=row[0], name=row[1])
+
+
+@router.delete("/{course_id}/sections/{section_id}/groups/{group_id}", status_code=status.HTTP_200_OK)
+async def delete_group(
+    course_id: int,
+    section_id: int,
+    group_id: int,
+    current_user: dict = Depends(get_current_instructor),
+):
+    """Delete a group if no students are assigned."""
+    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this course")
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT g.id
+            FROM section_groups g
+            JOIN course_sections s ON s.id = g.section_id
+            WHERE g.id = %s AND s.id = %s AND s.course_id = %s
+            """,
+            (group_id, section_id, course_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Group not found")
+
+        cur.execute(
+            "SELECT COUNT(*) FROM user_courses WHERE course_id = %s AND group_id = %s",
+            (course_id, group_id),
+        )
+        if cur.fetchone()[0] > 0:
+            raise HTTPException(status_code=400, detail="Cannot delete a group with students")
+
+        cur.execute("DELETE FROM section_groups WHERE id = %s", (group_id,))
+        conn.commit()
+
+    return {"message": "Group deleted"}
+
+
+@router.post("/{course_id}/announcements", response_model=AnnouncementResponse, status_code=status.HTTP_201_CREATED)
+async def create_announcement(
+    course_id: int,
+    payload: CreateAnnouncementRequest,
+    current_user: dict = Depends(get_current_instructor),
+):
+    """Create a course announcement."""
+    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this course")
+
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Announcement message is required")
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO course_announcements (course_id, message, created_by)
+            VALUES (%s, %s, %s)
+            RETURNING id, message, created_by, created_at
+            """,
+            (course_id, message, current_user["id"]),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    return AnnouncementResponse(
+        id=row[0],
+        message=row[1],
+        created_by=row[2],
+        created_at=row[3].isoformat() if row[3] else None,
+    )
+
+
+@router.get("/{course_id}/announcements", response_model=AnnouncementListResponse)
+async def list_announcements(
+    course_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """List course announcements."""
+    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this course")
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, message, created_by, created_at
+            FROM course_announcements
+            WHERE course_id = %s
+            ORDER BY created_at DESC
+            """,
+            (course_id,),
+        )
+        rows = cur.fetchall()
+
+    return AnnouncementListResponse(
+        announcements=[
+            AnnouncementResponse(
+                id=row[0],
+                message=row[1],
+                created_by=row[2],
+                created_at=row[3].isoformat() if row[3] else None,
+            )
+            for row in rows
+        ]
+    )
+
+
+@router.get("/{course_id}/questions/export", status_code=status.HTTP_200_OK)
+async def export_questions_csv(
+    course_id: int,
+    current_user: dict = Depends(get_current_instructor),
+):
+    """Export course questions as CSV."""
+    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this course")
+
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT qh.id,
+                   qh.question,
+                   qh.answer,
+                   qh.created_at,
+                   u.email,
+                   l.original_name
+            FROM query_history qh
+            LEFT JOIN users u ON u.id = qh.user_id
+            LEFT JOIN lectures l ON l.id = qh.lecture_id
+            WHERE (l.course_id = %s OR (qh.course_id = %s AND qh.lecture_id IS NULL))
+            ORDER BY qh.created_at DESC
+            """,
+            (course_id, course_id),
+        )
+        rows = cur.fetchall()
+
+    import csv
+    from io import StringIO
+    from fastapi.responses import Response
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["id", "question", "answer", "created_at", "student_email", "lecture_name"])
+    for row in rows:
+        writer.writerow([row[0], row[1], row[2], row[3], row[4], row[5]])
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=course_{course_id}_questions.csv"},
+    )
 
 @router.delete("/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_course_route(
