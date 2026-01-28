@@ -93,10 +93,11 @@ async def get_query_history_for_lecture(
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, question, answer, created_at
-            FROM query_history
-            WHERE lecture_id = %s
-            ORDER BY created_at DESC
+            SELECT qh.id, qh.question, qh.answer, qh.created_at, u.email
+            FROM query_history qh
+            LEFT JOIN users u ON u.id = qh.user_id
+            WHERE qh.lecture_id = %s
+            ORDER BY qh.created_at DESC
             LIMIT %s
             """,
             (lecture_id, limit),
@@ -108,7 +109,8 @@ async def get_query_history_for_lecture(
             id=item[0],
             question=item[1],
             answer=item[2],
-            created_at=item[3]
+            created_at=item[3],
+            user_email=item[4],
         )
         for item in history_items
     ]

@@ -281,6 +281,89 @@ def select_final_flashcards(
     return selected[:target_count]
 
 
+def _parse_flashcard_candidates(
+    response: str,
+    key_points: List[str],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    cleaned = re.sub(r'```json\s*', '', response)
+    cleaned = re.sub(r'```\s*', '', cleaned)
+    cleaned = cleaned.strip()
+
+    parsed: Any = None
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        parsed = None
+
+    if parsed is None:
+        start = cleaned.find('[')
+        end = cleaned.rfind(']')
+        if start != -1 and end != -1 and end > start:
+            try:
+                parsed = json.loads(cleaned[start:end + 1])
+            except json.JSONDecodeError:
+                parsed = None
+
+    candidates: List[Dict[str, Any]] = []
+
+    def normalize_pair(text: str) -> Tuple[str, str]:
+        text = re.sub(r"^\s*\d+\.\s*", "", text).strip()
+        if text.lower().startswith("q:") and "a:" in text.lower():
+            parts = re.split(r"\ba:\b", text, maxsplit=1, flags=re.IGNORECASE)
+            question = parts[0].replace("Q:", "").strip()
+            answer = parts[1].strip() if len(parts) > 1 else ""
+            return question, answer
+        for splitter in [":", " - ", " — "]:
+            if splitter in text:
+                left, right = text.split(splitter, 1)
+                left = left.strip()
+                right = right.strip()
+                if left and right:
+                    return left, right
+        return "", ""
+
+    if isinstance(parsed, list):
+        for item in parsed[:limit]:
+            if isinstance(item, dict):
+                question = item.get("question") or item.get("front") or ""
+                answer = item.get("answer") or item.get("back") or ""
+                kp_idx = item.get("keypoint_index")
+                if question and answer:
+                    if kp_idx is not None:
+                        try:
+                            kp_idx = int(kp_idx)
+                            if kp_idx < 1 or kp_idx > len(key_points):
+                                kp_idx = None
+                        except (ValueError, TypeError):
+                            kp_idx = None
+                    candidates.append(
+                        {
+                            "question": str(question).strip(),
+                            "answer": str(answer).strip(),
+                            "keypoint_index": kp_idx,
+                        }
+                    )
+            elif isinstance(item, str):
+                question, answer = normalize_pair(item)
+                if question and answer:
+                    candidates.append(
+                        {"question": question, "answer": answer, "keypoint_index": None}
+                    )
+        return candidates
+
+    for line in cleaned.splitlines():
+        if not line.strip():
+            continue
+        question, answer = normalize_pair(line)
+        if question and answer:
+            candidates.append({"question": question, "answer": answer, "keypoint_index": None})
+        if len(candidates) >= limit:
+            break
+
+    return candidates
+
+
 def generate_flashcard_candidates(
     key_points: List[str],
     existing_questions: List[str],
@@ -337,47 +420,25 @@ Return JSON array:
     ]
     
     response = client.chat(messages, temperature=0.7).strip()
-    
-    # Parse JSON response
-    try:
-        # Remove markdown code blocks if present
-        response = re.sub(r'```json\s*', '', response)
-        response = re.sub(r'```\s*', '', response)
-        response = response.strip()
-        
-        parsed = json.loads(response)
-        if not isinstance(parsed, list):
-            raise ValueError("Response is not a list")
-        
-        candidates = []
-        for item in parsed:
-            if not isinstance(item, dict):
-                continue
-            
-            question = item.get("question") or item.get("front") or ""
-            answer = item.get("answer") or item.get("back") or ""
-            kp_idx = item.get("keypoint_index")
-            
-            if question and answer:
-                # Validate keypoint_index
-                if kp_idx is not None:
-                    try:
-                        kp_idx = int(kp_idx)
-                        if kp_idx < 1 or kp_idx > len(key_points):
-                            kp_idx = None
-                    except (ValueError, TypeError):
-                        kp_idx = None
-                
-                candidates.append({
-                    "question": question.strip(),
-                    "answer": answer.strip(),
-                    "keypoint_index": kp_idx,
-                })
-        
-        return candidates
-    
-    except (json.JSONDecodeError, ValueError) as e:
-        raise ValueError(f"Failed to parse LLM response as JSON: {e}")
+    candidates = _parse_flashcard_candidates(response, key_points, candidate_count)
+    if not candidates:
+        fallback_prompt = f"""Create {candidate_count} flashcards using this format only:
+Q: <question>
+A: <answer>
+
+Use these key points:
+{key_points_text}
+
+Return ONLY Q/A lines, no JSON, no markdown."""
+        fallback_messages = [
+            {"role": "system", "content": "You create flashcards from key points."},
+            {"role": "user", "content": fallback_prompt},
+        ]
+        response = client.chat(fallback_messages, temperature=0.5).strip()
+        candidates = _parse_flashcard_candidates(response, key_points, candidate_count)
+    if not candidates:
+        raise ValueError("No flashcard candidates could be parsed from model response")
+    return candidates
 
 
 def fill_missing_flashcards(
@@ -417,44 +478,25 @@ Return JSON array only."""
     ]
     
     response = client.chat(messages, temperature=0.8).strip()
-    
-    try:
-        response = re.sub(r'```json\s*', '', response)
-        response = re.sub(r'```\s*', '', response)
-        response = response.strip()
-        
-        parsed = json.loads(response)
-        if not isinstance(parsed, list):
-            raise ValueError("Response is not a list")
-        
-        candidates = []
-        for item in parsed[:missing_count]:
-            if not isinstance(item, dict):
-                continue
-            
-            question = item.get("question") or item.get("front") or ""
-            answer = item.get("answer") or item.get("back") or ""
-            kp_idx = item.get("keypoint_index")
-            
-            if question and answer:
-                if kp_idx is not None:
-                    try:
-                        kp_idx = int(kp_idx)
-                        if kp_idx < 1 or kp_idx > len(key_points):
-                            kp_idx = None
-                    except (ValueError, TypeError):
-                        kp_idx = None
-                
-                candidates.append({
-                    "question": question.strip(),
-                    "answer": answer.strip(),
-                    "keypoint_index": kp_idx,
-                })
-        
-        return candidates
-    
-    except (json.JSONDecodeError, ValueError) as e:
-        raise ValueError(f"Failed to parse fill-missing response as JSON: {e}")
+    candidates = _parse_flashcard_candidates(response, key_points, missing_count)
+    if not candidates:
+        fallback_prompt = f"""Create {missing_count} additional flashcards using this format only:
+Q: <question>
+A: <answer>
+
+Use these key points:
+{key_points_text}
+
+Return ONLY Q/A lines, no JSON, no markdown."""
+        fallback_messages = [
+            {"role": "system", "content": "You create flashcards from key points."},
+            {"role": "user", "content": fallback_prompt},
+        ]
+        response = client.chat(fallback_messages, temperature=0.5).strip()
+        candidates = _parse_flashcard_candidates(response, key_points, missing_count)
+    if not candidates:
+        raise ValueError("No flashcards could be parsed from model response")
+    return candidates
 
 
 def generate_flashcards_v2(

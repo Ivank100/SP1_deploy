@@ -6,6 +6,7 @@ from typing import List, Tuple, Optional, Any, Dict
 from .config import PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS, PG_DIM
 import random
 import string
+from datetime import datetime
 
 FILE_TYPES = ("pdf", "audio", "slides")
 
@@ -15,18 +16,24 @@ DEFAULT_COURSE_DESCRIPTION = "Default course for uncategorized lectures"
 def generate_join_code(length=6):
     """Generates a random uppercase alphanumeric code."""
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
-def add_user_to_course(user_id: int, course_id: int, role: str = 'student') -> None:
+def add_user_to_course(
+    user_id: int,
+    course_id: int,
+    role: str = 'student',
+    section_id: Optional[int] = None,
+    group_id: Optional[int] = None,
+) -> None:
     """Links a user to a course. Used by auth and instructor tools."""
     init_schema()
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO user_courses (user_id, course_id, role)
-                VALUES (%s, %s, %s)
+                INSERT INTO user_courses (user_id, course_id, role, section_id, group_id)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, course_id) DO NOTHING
                 """,
-                (user_id, course_id, role)
+                (user_id, course_id, role, section_id, group_id)
             )
             conn.commit()
 
@@ -43,7 +50,9 @@ def enroll_student_by_code(user_id: int, join_code: str) -> int:
             if not course:
                 raise ValueError("Invalid join code.")
             course_id = course[0]
-            add_user_to_course(user_id, course_id, 'student')
+            # Ensure student has a section assignment
+            section_id = get_or_create_default_section(course_id)
+            add_user_to_course(user_id, course_id, 'student', section_id=section_id)
             return course_id
 def get_conn():
     return psycopg.connect(
@@ -109,6 +118,9 @@ def init_schema():
                 name TEXT NOT NULL,
                 description TEXT,
                 join_code TEXT UNIQUE, -- Add this line
+                term_year INT,
+                term_number INT,
+                duration_minutes INT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_by INT REFERENCES users(id) ON DELETE SET NULL
             );
@@ -120,6 +132,8 @@ def init_schema():
                 user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
                 role TEXT DEFAULT 'student',
+                section_id INT,
+                group_id INT,
                 PRIMARY KEY (user_id, course_id)
             );
         """)
@@ -134,6 +148,81 @@ def init_schema():
         cur.execute("""
             ALTER TABLE user_courses
             ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'student';
+        """)
+
+        # Add section/group columns if they don't exist (migration)
+        cur.execute("""
+            ALTER TABLE user_courses
+            ADD COLUMN IF NOT EXISTS section_id INT;
+        """)
+        cur.execute("""
+            ALTER TABLE user_courses
+            ADD COLUMN IF NOT EXISTS group_id INT;
+        """)
+
+        # Sections table (per course)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS course_sections (
+                id SERIAL PRIMARY KEY,
+                course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(course_id, name)
+            );
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS course_sections_course_id_idx
+            ON course_sections(course_id);
+        """)
+
+        # Groups table (per section)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS section_groups (
+                id SERIAL PRIMARY KEY,
+                section_id INT NOT NULL REFERENCES course_sections(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(section_id, name)
+            );
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS section_groups_section_id_idx
+            ON section_groups(section_id);
+        """)
+
+        # Announcements table (per course)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS course_announcements (
+                id SERIAL PRIMARY KEY,
+                course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+                message TEXT NOT NULL,
+                created_by INT REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS course_announcements_course_id_idx
+            ON course_announcements(course_id);
+        """)
+
+        # Upload requests table (student -> instructor approval)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS lecture_upload_requests (
+                id SERIAL PRIMARY KEY,
+                course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+                student_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                original_name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                file_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                reviewed_by INT REFERENCES users(id) ON DELETE SET NULL,
+                reviewed_at TIMESTAMP
+            );
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS lecture_upload_requests_course_idx
+            ON lecture_upload_requests(course_id);
         """)
         
         # Create course_instructors table for instructor assignments
@@ -186,6 +275,31 @@ def init_schema():
         cur.execute("""
             ALTER TABLE courses
             ADD COLUMN IF NOT EXISTS join_code TEXT UNIQUE;
+        """)
+        cur.execute("""
+            ALTER TABLE courses
+            ADD COLUMN IF NOT EXISTS term_year INT;
+        """)
+        cur.execute("""
+            ALTER TABLE courses
+            ADD COLUMN IF NOT EXISTS term_number INT;
+        """)
+        cur.execute("""
+            ALTER TABLE courses
+            ADD COLUMN IF NOT EXISTS duration_minutes INT;
+        """)
+
+        # Backfill term_year/term_number for existing courses
+        cur.execute("""
+            UPDATE courses
+            SET term_year = EXTRACT(YEAR FROM created_at)::INT,
+                term_number = CASE WHEN EXTRACT(MONTH FROM created_at) < 7 THEN 1 ELSE 2 END
+            WHERE term_year IS NULL OR term_number IS NULL;
+        """)
+        cur.execute("""
+            UPDATE courses
+            SET duration_minutes = 90
+            WHERE duration_minutes IS NULL;
         """)
 
         # Ensure lecture metadata columns exist for legacy databases
@@ -579,11 +693,17 @@ def _get_or_create_default_course(cur) -> int:
 
     cur.execute(
         """
-        INSERT INTO courses (name, description)
-        VALUES (%s, %s)
+        INSERT INTO courses (name, description, term_year, term_number, duration_minutes)
+        VALUES (%s, %s, %s, %s, %s)
         RETURNING id
         """,
-        (DEFAULT_COURSE_NAME, DEFAULT_COURSE_DESCRIPTION),
+        (
+            DEFAULT_COURSE_NAME,
+            DEFAULT_COURSE_DESCRIPTION,
+            datetime.utcnow().year,
+            1 if datetime.utcnow().month < 7 else 2,
+            90,
+        ),
     )
     return cur.fetchone()[0]
 
@@ -644,19 +764,30 @@ def update_lecture_status(lecture_id: int, status: str):
         conn.commit()
 
 
-def create_course(name: str, description: Optional[str] = None, created_by: Optional[int] = None) -> int:
+def create_course(
+    name: str,
+    description: Optional[str] = None,
+    created_by: Optional[int] = None,
+    term_year: Optional[int] = None,
+    term_number: Optional[int] = None,
+    duration_minutes: Optional[int] = None,
+) -> int:
     """Create a new course with a unique randomized join code."""
     init_schema()
     join_code = generate_join_code()
     
     with get_conn() as conn, conn.cursor() as cur:
+        if term_year is None or term_number is None:
+            now = datetime.utcnow()
+            term_year = term_year or now.year
+            term_number = term_number or (1 if now.month < 7 else 2)
         cur.execute(
             """
-            INSERT INTO courses (name, description, created_by, join_code)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO courses (name, description, created_by, join_code, term_year, term_number, duration_minutes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """,
-            (name, description, created_by, join_code),
+            (name, description, created_by, join_code, term_year, term_number, duration_minutes),
         )
         course_id = cur.fetchone()[0]
         conn.commit()
@@ -669,7 +800,7 @@ def list_courses():
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, name, description, created_at, join_code
+            SELECT id, name, description, created_at, join_code, term_year, term_number, duration_minutes
             FROM courses
             ORDER BY created_at DESC
             """
@@ -681,7 +812,7 @@ def get_course(course_id: int):
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, name, description, created_at, join_code
+            SELECT id, name, description, created_at, join_code, term_year, term_number, duration_minutes
             FROM courses
             WHERE id = %s
             """,
@@ -1100,9 +1231,11 @@ def get_lecture(lecture_id: int):
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, original_name, file_path, page_count, status, created_at, course_id, file_type, transcript, created_by
-            FROM lectures
-            WHERE id = %s
+            SELECT l.id, l.original_name, l.file_path, l.page_count, l.status, l.created_at, l.course_id, l.file_type,
+                   l.transcript, l.created_by, u.role
+            FROM lectures l
+            LEFT JOIN users u ON u.id = l.created_by
+            WHERE l.id = %s
             """,
             (lecture_id,),
         )
@@ -1112,9 +1245,10 @@ def list_lectures(course_id: Optional[int] = None):
     """List lectures, optionally filtered by course."""
     with get_conn() as conn, conn.cursor() as cur:
         base_query = """
-            SELECT id, original_name, file_path, page_count, status, created_at, course_id, file_type,
-                   COALESCE(transcript IS NOT NULL, FALSE) AS has_transcript
-            FROM lectures
+            SELECT l.id, l.original_name, l.file_path, l.page_count, l.status, l.created_at, l.course_id, l.file_type,
+                   COALESCE(l.transcript IS NOT NULL, FALSE) AS has_transcript, l.created_by, u.role
+            FROM lectures l
+            LEFT JOIN users u ON u.id = l.created_by
         """
         params: List[Any] = []
         if course_id is not None:
@@ -1198,7 +1332,7 @@ def get_user_by_id(user_id: int):
         return cur.fetchone()
 
 
-def get_user_courses(user_id: int) -> List[Dict[str, Any]]:
+def get_user_courses_with_details(user_id: int) -> List[Dict[str, Any]]:
     """Retrieve all courses a user is enrolled in, including the join_code."""
     init_schema()
     with get_conn() as conn:
@@ -1263,6 +1397,35 @@ def get_user_courses(user_id: int) -> List[int]:
             (user_id,),
         )
         return [row[0] for row in cur.fetchall()]
+
+
+def get_or_create_default_section(course_id: int) -> int:
+    """Ensure a default section exists for a course and return its ID."""
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id FROM course_sections
+            WHERE course_id = %s
+            ORDER BY created_at ASC
+            LIMIT 1
+            """,
+            (course_id,),
+        )
+        row = cur.fetchone()
+        if row:
+            return row[0]
+        cur.execute(
+            """
+            INSERT INTO course_sections (course_id, name)
+            VALUES (%s, %s)
+            RETURNING id
+            """,
+            (course_id, "Section 1"),
+        )
+        section_id = cur.fetchone()[0]
+        conn.commit()
+        return section_id
 
 
 def can_user_access_course(user_id: int, course_id: int, user_role: str) -> bool:

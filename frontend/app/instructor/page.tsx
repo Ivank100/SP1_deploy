@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiClient, QueryClustersResponse, TrendsResponse, LectureHealthResponse, QueryListResponse, Course, Lecture } from '@/lib/api';
+import { apiClient, TrendsResponse, LectureHealthResponse, QueryListResponse, Course, Lecture } from '@/lib/api';
 import Link from 'next/link';
 
 export default function InstructorDashboard() {
@@ -12,7 +12,6 @@ export default function InstructorDashboard() {
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [selectedLectureId, setSelectedLectureId] = useState<number | null>(null);
-  const [clusters, setClusters] = useState<QueryClustersResponse | null>(null);
   const [trends, setTrends] = useState<TrendsResponse | null>(null);
   const [health, setHealth] = useState<LectureHealthResponse | null>(null);
   const [queries, setQueries] = useState<QueryListResponse | null>(null);
@@ -79,22 +78,19 @@ export default function InstructorDashboard() {
       const lectureIdParam = selectedLectureId !== null && selectedLectureId !== undefined ? selectedLectureId : undefined;
       const courseIdParam = selectedCourseId !== null && selectedCourseId !== undefined ? selectedCourseId : undefined;
       
-      const [clustersData, trendsData, healthData, queriesData] = await Promise.all([
-        apiClient.getQueryClusters(5, lectureIdParam, courseIdParam),
-        apiClient.getTrends(30, 'day', courseIdParam, lectureIdParam),
+      const [trendsData, healthData, queriesData] = await Promise.all([
+        apiClient.getTrends(56, 'week', courseIdParam, lectureIdParam),
         apiClient.getLectureHealth(courseIdParam, lectureIdParam),
-        apiClient.getAllQueries(100, lectureIdParam, courseIdParam),
+        apiClient.getAllQueries(1000, lectureIdParam, courseIdParam),
       ]);
       
-      setClusters(clustersData);
       setTrends(trendsData);
       setHealth(healthData);
       setQueries(queriesData);
     } catch (error) {
       console.error('Failed to load analytics:', error);
       // Set empty data on error
-      setClusters({ clusters: [], total_questions: 0 });
-      setTrends({ trends: [], period: 'day', days: 30 });
+      setTrends({ trends: [], period: 'week', days: 56 });
       setHealth({ lectures: [], total_lectures: 0 });
       setQueries({ queries: [], total: 0 });
     } finally {
@@ -115,6 +111,107 @@ export default function InstructorDashboard() {
       </div>
     );
   }
+
+  const queriesList = queries?.queries ?? [];
+  const totalQuestions = Math.max(queries?.total ?? 0, queriesList.length);
+  const now = new Date();
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setDate(now.getDate() - 7);
+  const activeStudentsLast7Days = new Set(
+    queriesList
+      .filter((q) => q.created_at && new Date(q.created_at) >= sevenDaysAgo)
+      .map((q) => q.user_email || q.user_id?.toString())
+      .filter(Boolean)
+  ).size;
+
+  const mostConfusingLecture = health?.lectures?.length
+    ? [...health.lectures].sort((a, b) => b.query_count - a.query_count)[0]
+    : null;
+
+  const topLecturesByConfusion = health?.lectures?.length
+    ? [...health.lectures]
+        .sort((a, b) => b.query_count - a.query_count)
+        .slice(0, 5)
+    : [];
+
+  const topStudents = (() => {
+    const counts = new Map<string, number>();
+    queriesList.forEach((q) => {
+      const key = q.user_email || q.user_id?.toString();
+      if (!key) return;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+  })();
+
+  const trendPoints = trends?.trends ?? [];
+  const trendDelta =
+    trendPoints.length >= 2
+      ? trendPoints[trendPoints.length - 1].count - trendPoints[0].count
+      : 0;
+  const trendDirection = trendDelta > 0 ? 'up' : trendDelta < 0 ? 'down' : 'flat';
+
+  const renderTrendLine = () => {
+    if (!trendPoints.length) {
+      return <p className="text-sm text-gray-500">No trend data available yet.</p>;
+    }
+    const width = 640;
+    const height = 200;
+    const padding = 24;
+    const maxValue = Math.max(1, ...trendPoints.map((t) => t.count));
+    const xStep =
+      trendPoints.length > 1 ? (width - padding * 2) / (trendPoints.length - 1) : 0;
+    const points = trendPoints
+      .map((t, idx) => {
+        const x = padding + idx * xStep;
+        const y = height - padding - (t.count / maxValue) * (height - padding * 2);
+        return `${x},${y}`;
+      })
+      .join(' ');
+    return (
+      <div>
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-48">
+          <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#E5E7EB" strokeWidth="1" />
+          <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#E5E7EB" strokeWidth="1" />
+          <polyline fill="none" stroke="#2563EB" strokeWidth="2" points={points} />
+        </svg>
+        <div className="flex justify-between text-xs text-gray-500 mt-2">
+          <span>{trendPoints[0].period}</span>
+          <span>{trendPoints[trendPoints.length - 1].period}</span>
+        </div>
+      </div>
+    );
+  };
+
+  const renderLectureBars = () => {
+    if (!health?.lectures?.length) {
+      return <p className="text-sm text-gray-500">No lecture data available yet.</p>;
+    }
+    const items = [...health.lectures]
+      .sort((a, b) => b.query_count - a.query_count)
+      .slice(0, 8);
+    const maxValue = Math.max(1, ...items.map((l) => l.query_count));
+    return (
+      <div className="space-y-3">
+        {items.map((lecture) => (
+          <div key={lecture.lecture_id} className="flex items-center gap-3">
+            <div className="w-48 text-sm text-gray-700 truncate" title={lecture.lecture_name}>
+              {lecture.lecture_name}
+            </div>
+            <div className="flex-1 bg-gray-100 rounded-full h-3">
+              <div
+                className="bg-primary-500 h-3 rounded-full"
+                style={{ width: `${(lecture.query_count / maxValue) * 100}%` }}
+              />
+            </div>
+            <div className="text-sm text-gray-600 w-12 text-right">{lecture.query_count}</div>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -247,93 +344,85 @@ export default function InstructorDashboard() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'overview' ? (
           <div className="space-y-8">
-            {/* Query Clusters */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Topic Clusters</h2>
-              {clusters && clusters.clusters.length > 0 ? (
-                <div className="space-y-4">
-                  {clusters.clusters.map((cluster) => (
-                    <div key={cluster.cluster_id} className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-medium text-gray-900">{cluster.representative_question}</h3>
-                        <span className="px-2 py-1 bg-primary-100 text-primary-700 text-xs font-medium rounded">
-                          {cluster.count} questions
-                        </span>
+            {/* Overview Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                <p className="text-xs text-gray-500 mb-1">Total Questions (course)</p>
+                <p className="text-2xl font-bold text-gray-900">{totalQuestions}</p>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                <p className="text-xs text-gray-500 mb-1">Active Students (last 7 days)</p>
+                <p className="text-2xl font-bold text-gray-900">{activeStudentsLast7Days}</p>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                <p className="text-xs text-gray-500 mb-1">Most Confusing Lecture</p>
+                <p className="text-sm font-semibold text-gray-900 line-clamp-2">
+                  {mostConfusingLecture?.lecture_name || 'N/A'}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {mostConfusingLecture ? `${mostConfusingLecture.query_count} questions` : ''}
+                </p>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                <p className="text-xs text-gray-500 mb-1">Trend (last 7 days)</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {trendDirection === 'up' && `↑ ${Math.abs(trendDelta)}`}
+                  {trendDirection === 'down' && `↓ ${Math.abs(trendDelta)}`}
+                  {trendDirection === 'flat' && '→ 0'}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Weekly change</p>
+              </div>
+            </div>
+
+            {/* Charts */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">Questions per Lecture</h2>
+                {renderLectureBars()}
+              </div>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">Questions per Week</h2>
+                {renderTrendLine()}
+              </div>
+            </div>
+
+            {/* Lists */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">Top 5 Lectures by Confusion</h2>
+                {topLecturesByConfusion.length > 0 ? (
+                  <div className="space-y-3">
+                    {topLecturesByConfusion.map((lecture, index) => (
+                      <div key={lecture.lecture_id} className="flex items-center justify-between">
+                        <div className="text-sm text-gray-700 truncate">
+                          {index + 1}. {lecture.lecture_name}
+                        </div>
+                        <span className="text-sm text-gray-500">{lecture.query_count} questions</span>
                       </div>
-                      <p className="text-sm text-gray-600 mb-2">Sample questions:</p>
-                      <ul className="list-disc pl-5 space-y-1 text-sm text-gray-500">
-                        {cluster.questions.slice(0, 3).map((q, idx) => (
-                          <li key={idx}>{q}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500">No query clusters available yet.</p>
-              )}
-            </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No lecture data available yet.</p>
+                )}
+              </div>
 
-            {/* Trends */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Query Trends (Last 30 Days)</h2>
-              {trends && trends.trends.length > 0 ? (
-                <div className="space-y-2">
-                  {trends.trends.slice(-10).map((trend) => (
-                    <div key={trend.period} className="flex items-center justify-between py-2 border-b border-gray-100">
-                      <span className="text-sm text-gray-600">{trend.period}</span>
-                      <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded">
-                        {trend.count} queries
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500">No trend data available yet.</p>
-              )}
-            </div>
-
-            {/* Lecture Health */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Lecture Health Metrics</h2>
-              {health && health.lectures.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lecture</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Queries</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg Complexity</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Top Topics</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {health.lectures.map((lecture) => (
-                        <tr key={lecture.lecture_id}>
-                          <td className="px-4 py-3 text-sm text-gray-900">{lecture.lecture_name}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{lecture.query_count}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{lecture.avg_complexity} words</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {lecture.top_clusters.length > 0 ? (
-                              <ul className="list-disc pl-5">
-                                {lecture.top_clusters.map((c, idx) => (
-                                  <li key={idx} className="truncate max-w-xs" title={c.representative_question}>
-                                    {c.representative_question} ({c.count})
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <span className="text-gray-400">No clusters</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500">No lecture health data available yet.</p>
-              )}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">Most Active Students</h2>
+                {topStudents.length > 0 ? (
+                  <div className="space-y-3">
+                    {topStudents.map(([student, count], index) => (
+                      <div key={student} className="flex items-center justify-between">
+                        <div className="text-sm text-gray-700 truncate">
+                          {index + 1}. {student}
+                        </div>
+                        <span className="text-sm text-gray-500">{count} questions</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No student activity yet.</p>
+                )}
+              </div>
             </div>
           </div>
         ) : (

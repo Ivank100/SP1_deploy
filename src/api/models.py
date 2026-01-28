@@ -14,6 +14,8 @@ class LectureResponse(BaseModel):
     course_id: Optional[int] = None
     file_type: str
     has_transcript: bool = False
+    created_by: Optional[int] = None
+    created_by_role: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -61,6 +63,7 @@ class QueryHistoryItem(BaseModel):
     question: str
     answer: str
     created_at: datetime
+    user_email: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -155,7 +158,10 @@ class CourseResponse(BaseModel):
     name: str
     description: Optional[str]
     created_at: datetime
-    join_code: str  # <--- Add this line
+    join_code: Optional[str] = None
+    term_year: Optional[int] = None
+    term_number: Optional[int] = None
+    duration_minutes: Optional[int] = None
     lecture_count: int
     lectures: List[LectureResponse]
 
@@ -168,6 +174,9 @@ class CreateCourseRequest(BaseModel):
     """Request body for creating a course."""
     name: str
     description: Optional[str] = None
+    term_year: Optional[int] = None
+    term_number: Optional[int] = None
+    duration_minutes: Optional[int] = None
 
 
 class TranscriptSegment(BaseModel):
@@ -236,6 +245,28 @@ class LectureHealthResponse(BaseModel):
     total_lectures: int
 
 
+class LectureAnalyticsBin(BaseModel):
+    """Single time bin for lecture question analytics."""
+    start_pct: float
+    end_pct: float
+    start_min: Optional[int] = None
+    end_min: Optional[int] = None
+    count: int
+    course_avg: Optional[float] = None
+
+
+class LectureAnalyticsResponse(BaseModel):
+    """Response for lecture-level analytics."""
+    lecture_id: int
+    total_questions: int
+    active_students: int
+    peak_confusion_range: Optional[str] = None
+    top_confused_question: Optional[str] = None
+    bins: List[LectureAnalyticsBin]
+    course_question_total: Optional[int] = None
+    course_lecture_count: Optional[int] = None
+
+
 class QueryListItem(BaseModel):
     """Single query in list view."""
     id: int
@@ -252,4 +283,85 @@ class QueryListResponse(BaseModel):
     """Response for query list."""
     queries: List[QueryListItem]
     total: int
+
+
+class CourseStudentResponse(BaseModel):
+    """Response for course student."""
+    student_id: int
+    student_email: str
+    role: str
+    section_id: Optional[int] = None
+    section_name: Optional[str] = None
+    group_id: Optional[int] = None
+    group_name: Optional[str] = None
+    questions_count: int = 0
+    last_active: Optional[str] = None
+
+
+class CourseSectionResponse(BaseModel):
+    id: int
+    name: str
+
+
+class CourseSectionListResponse(BaseModel):
+    sections: List[CourseSectionResponse]
+
+
+class CreateSectionRequest(BaseModel):
+    name: str
+
+
+class SectionGroupResponse(BaseModel):
+    id: int
+    name: str
+
+
+class SectionGroupListResponse(BaseModel):
+    groups: List[SectionGroupResponse]
+
+
+class CreateGroupRequest(BaseModel):
+    name: str
+
+
+class UpdateStudentAssignmentRequest(BaseModel):
+    role: Optional[str] = None
+    section_id: Optional[int] = None
+    group_id: Optional[int] = None
+
+
+class CreateAnnouncementRequest(BaseModel):
+    message: str
+
+
+class AnnouncementResponse(BaseModel):
+    id: int
+    message: str
+    created_by: Optional[int] = None
+    created_at: Optional[str] = None
+
+
+class AnnouncementListResponse(BaseModel):
+    announcements: List[AnnouncementResponse]
+
+
+class UploadRequestResponse(BaseModel):
+    id: int
+    course_id: int
+    student_id: int
+    student_email: Optional[str] = None
+    original_name: str
+    file_type: str
+    status: str
+    created_at: Optional[str] = None
+    reviewed_by: Optional[int] = None
+    reviewed_at: Optional[str] = None
+
+
+class UploadRequestListResponse(BaseModel):
+    requests: List[UploadRequestResponse]
+
+
+class UploadRequestDecision(BaseModel):
+    decision: str  # approve | reject
 

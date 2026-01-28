@@ -9,6 +9,7 @@ from ...db import (
     list_lectures,
     delete_lecture,
     can_user_access_lecture,
+    get_user_courses,
 )
 from ...rag_index import ingest_pdf, ingest_audio, ingest_slides
 from ..models import (
@@ -16,8 +17,10 @@ from ..models import (
     LectureListResponse,
     UploadResponse,
     ErrorResponse,
+    LectureAnalyticsResponse,
 )
-from ..middleware.auth import get_current_user
+from ..middleware.auth import get_current_user, get_current_instructor
+from ...analytics import get_lecture_analytics
 
 router = APIRouter(prefix="/api/lectures", tags=["lectures"])
 
@@ -97,13 +100,11 @@ async def list_all_lectures(
     current_user: dict = Depends(get_current_user),
 ):
     """List all lectures or filter by course (filtered by user access)."""
-    from ...db import get_user_courses, list_courses
-    
     lectures = list_lectures(course_id=course_id)
     
     # Filter lectures based on user role and enrollment
     if current_user["role"] == "student":
-        # Students only see lectures in courses they're enrolled in
+        # Students only see lectures in courses they're enrolled in (user_courses table)
         user_course_ids = get_user_courses(current_user["id"])
         lectures = [l for l in lectures if l[6] in user_course_ids]  # l[6] is course_id
     elif current_user["role"] == "instructor":
@@ -138,6 +139,8 @@ async def list_all_lectures(
             course_id=lect[6],
             file_type=lect[7],
             has_transcript=lect[8],
+            created_by=lect[9],
+            created_by_role=lect[10],
         )
         for lect in lectures
     ]
@@ -146,6 +149,30 @@ async def list_all_lectures(
         lectures=lecture_responses,
         total=len(lecture_responses)
     )
+
+
+@router.get("/{lecture_id}/analytics", response_model=LectureAnalyticsResponse)
+async def get_lecture_analytics_route(
+    lecture_id: int,
+    current_user: dict = Depends(get_current_instructor),
+):
+    """Get analytics for a lecture (instructor only)."""
+    lecture = get_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Lecture with id {lecture_id} not found",
+        )
+
+    if not can_user_access_lecture(current_user["id"], lecture_id, current_user["role"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this lecture",
+        )
+
+    course_id = lecture[6]
+    data = get_lecture_analytics(lecture_id=lecture_id, course_id=course_id)
+    return LectureAnalyticsResponse(**data)
 
 @router.get("/{lecture_id}", response_model=LectureResponse)
 async def get_lecture_by_id(
@@ -178,6 +205,8 @@ async def get_lecture_by_id(
         course_id=lecture[6],
         file_type=lecture[7],
         has_transcript=bool(lecture[8]),
+        created_by=lecture[9],
+        created_by_role=lecture[10],
     )
 
 @router.get("/{lecture_id}/status", response_model=dict)

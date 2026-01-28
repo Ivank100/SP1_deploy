@@ -1,4 +1,6 @@
 import json
+import re
+import random
 from typing import List, Dict, Any, Tuple, Optional
 
 from .db import (
@@ -127,7 +129,7 @@ def generate_summary(lecture_id: int) -> str:
             ),
         },
     ]
-    summary = client.chat(messages).strip()
+    summary = client.chat(messages, max_tokens=1200).strip()
     save_lecture_summary(lecture_id, summary)
     return summary
 
@@ -144,23 +146,44 @@ def generate_key_points(lecture_id: int) -> List[str]:
         {
             "role": "user",
             "content": (
-                "Read the context and return 5-8 essential key points as a JSON array of strings. "
+            "Read the context and return a NEW set of 3-5 essential key points as a JSON array of strings. "
+            "Avoid repeating the exact same sentences; vary wording when possible. "
                 "Each key point should be concise (max 25 words) and reflect the lecture content only.\n\n"
                 f"Context:\n{context}\n\nJSON array:"
             ),
         },
     ]
-    response = client.chat(messages).strip()
+    response = client.chat(messages, max_tokens=800, temperature=0.6).strip()
     key_points: List[str]
     try:
         parsed = json.loads(response)
         if isinstance(parsed, list):
-            key_points = [str(item).strip() for item in parsed][:8]
+            key_points = [str(item).strip() for item in parsed][:5]
         else:
             raise ValueError
     except (json.JSONDecodeError, ValueError):
         key_points = [line.strip("-• ") for line in response.splitlines() if line.strip()]
-        key_points = key_points[:8]
+        key_points = key_points[:5]
+    if key_points:
+        key_points = [re.sub(r"^\s*\d+\.\s*", "", point).strip() for point in key_points]
+        key_points = [point for point in key_points if point]
+        key_points = key_points[:5]
+    if not key_points:
+        # Fallback: derive concise points from context when model response is unusable
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", context.strip()) if s.strip()]
+        random.shuffle(sentences)
+        fallback_points = []
+        for sentence in sentences:
+            cleaned = re.sub(r"\s+", " ", sentence).strip()
+            if not cleaned:
+                continue
+            words = cleaned.split()
+            if len(words) > 25:
+                cleaned = " ".join(words[:25]) + "..."
+            fallback_points.append(cleaned)
+            if len(fallback_points) >= 5:
+                break
+        key_points = fallback_points[:5]
     if not key_points:
         raise ValueError("Could not extract key points from model response")
     save_lecture_key_points(lecture_id, key_points)
@@ -187,24 +210,45 @@ def generate_flashcards(lecture_id: int) -> List[Dict[str, Any]]:
             ),
         },
     ]
-    response = client.chat(messages).strip()
+    response = client.chat(messages, max_tokens=1200).strip()
+
+    def _normalize_flashcard(text: str) -> Tuple[str, str]:
+        cleaned = re.sub(r"^\s*\d+\.\s*", "", text).strip()
+        for splitter in [":", " - ", " — "]:
+            if splitter in cleaned:
+                left, right = cleaned.split(splitter, 1)
+                left = left.strip()
+                right = right.strip()
+                if left and right:
+                    return left, right
+        return "", ""
+
+    parsed: Any = None
     try:
         parsed = json.loads(response)
-        if not isinstance(parsed, list):
-            raise ValueError
-    except (json.JSONDecodeError, ValueError):
-        raise ValueError("Failed to parse flashcards response as JSON")
+    except json.JSONDecodeError:
+        parsed = None
 
     flashcards: List[Tuple[str, str, Any]] = []
-    for item in parsed[:5]:
-        if not isinstance(item, dict):
-            continue
-        front = item.get("front") or item.get("question")
-        back = item.get("back") or item.get("answer")
-        page = item.get("page_number") or item.get("page")
-        if not front or not back:
-            continue
-        flashcards.append((str(front).strip(), str(back).strip(), int(page) if page else None))
+    if isinstance(parsed, list):
+        for item in parsed[:5]:
+            if isinstance(item, dict):
+                front = item.get("front") or item.get("question")
+                back = item.get("back") or item.get("answer")
+                page = item.get("page_number") or item.get("page")
+                if front and back:
+                    flashcards.append((str(front).strip(), str(back).strip(), int(page) if page else None))
+            elif isinstance(item, str):
+                front, back = _normalize_flashcard(item)
+                if front and back:
+                    flashcards.append((front, back, None))
+    else:
+        for line in response.splitlines():
+            if not line.strip():
+                continue
+            front, back = _normalize_flashcard(line)
+            if front and back:
+                flashcards.append((front, back, None))
 
     if not flashcards:
         raise ValueError("No valid flashcards returned by model")
