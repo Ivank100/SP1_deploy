@@ -336,10 +336,10 @@ export default function LecturePage() {
     const maxValue = Math.max(1, ...lectureCounts, ...(courseAvgEligible ? courseCounts : []));
 
     const width = 760;
-    const height = 260;
+    const height = 290;
     const padding = 32;
-    const totalPoints = bins.length + 2;
-    const xStep = totalPoints > 1 ? (width - padding * 2) / (totalPoints - 1) : 0;
+    const binCount = bins.length;
+    const xStep = binCount > 0 ? (width - padding * 2) / binCount : 0;
 
     const yForValue = (value: number) =>
       height - padding - (value / maxValue) * (height - padding * 2);
@@ -352,32 +352,32 @@ export default function LecturePage() {
     };
 
     const lectureSeries = [
-      { x: padding, y: yForValue(0), value: 0, isEndpoint: true, label: 'Before start' },
+      { x: padding, y: yForValue(0), value: 0, isEndpoint: true, label: 'Start' },
       ...bins.map((bin, idx) => ({
-        x: padding + (idx + 1) * xStep,
+        x: padding + (idx + 0.5) * xStep,
         y: yForValue(bin.count),
         value: bin.count,
         label: formatRangeLabel(bin),
         isEndpoint: false,
       })),
       {
-        x: padding + (totalPoints - 1) * xStep,
+        x: padding + binCount * xStep,
         y: yForValue(0),
         value: 0,
         isEndpoint: true,
-        label: 'After end',
+        label: 'End',
       },
     ];
 
     const courseSeries = [
       { x: padding, y: yForValue(0), value: 0, isEndpoint: true },
       ...bins.map((bin, idx) => ({
-        x: padding + (idx + 1) * xStep,
+        x: padding + (idx + 0.5) * xStep,
         y: yForValue(bin.course_avg ?? 0),
         value: bin.course_avg ?? 0,
       })),
       {
-        x: padding + (totalPoints - 1) * xStep,
+        x: padding + binCount * xStep,
         y: yForValue(0),
         value: 0,
         isEndpoint: true,
@@ -413,13 +413,10 @@ export default function LecturePage() {
     const lectureSegments = buildSegments(lectureSeries);
     const courseSegments = courseAvgEligible ? buildSegments(courseSeries) : [];
 
-    const binLabelPositions = bins.map((_, idx) => ({
-      leftPct: ((padding + (idx + 1) * xStep) / width) * 100,
-    }));
 
     return (
       <div className="relative">
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-64">
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-72">
           <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#E5E7EB" strokeWidth="1" />
           <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#E5E7EB" strokeWidth="1" />
 
@@ -468,25 +465,25 @@ export default function LecturePage() {
               </circle>
             );
           })}
+          {bins.map((bin, idx) => {
+            const start = bin.start_min ?? bin.start_pct;
+            const end = bin.end_min ?? bin.end_pct;
+            const label = `${start}-${end}`;
+            const x = padding + (idx + 0.5) * xStep;
+            return (
+              <text
+                key={`x-label-${idx}`}
+                x={x}
+                y={height - padding + 18}
+                textAnchor="middle"
+                fontSize="10"
+                fill="#6B7280"
+              >
+                {label}
+              </text>
+            );
+          })}
         </svg>
-        {bins.some((bin) => bin.start_min != null && bin.end_min != null) && (
-          <div className="relative mt-2 h-6 text-[10px] text-gray-500">
-            {bins.map((bin, idx) => {
-              if (bin.start_min == null || bin.end_min == null) {
-                return null;
-              }
-              return (
-                <span
-                  key={`bin-range-${idx}`}
-                  className="absolute whitespace-nowrap"
-                  style={{ left: `${binLabelPositions[idx].leftPct}%`, transform: 'translateX(-50%)' }}
-                >
-                  {bin.start_min}-{bin.end_min} min
-                </span>
-              );
-            })}
-          </div>
-        )}
         <div className="flex items-center gap-4 mt-3 text-sm text-gray-600">
           <div className="flex items-center gap-2">
             <span className="inline-block w-3 h-0.5 bg-blue-600" />

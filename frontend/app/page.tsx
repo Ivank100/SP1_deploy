@@ -24,6 +24,7 @@ export default function Home() {
   const [viewMode, setViewMode] = useState<'semester' | 'mindmap'>('semester');
   const [expandedTerms, setExpandedTerms] = useState<Record<string, boolean>>({});
   
+  
   // States for Join Course feature
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [joinCode, setJoinCode] = useState('');
