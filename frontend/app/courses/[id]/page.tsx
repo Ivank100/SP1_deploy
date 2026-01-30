@@ -336,6 +336,13 @@ export default function CourseDetailPage() {
   }, [user?.role, courseId]);
 
   useEffect(() => {
+    if (user?.role === 'instructor' && course?.id) {
+      loadCourseStudents(course.id);
+      loadSections(course.id);
+    }
+  }, [user?.role, course?.id]);
+
+  useEffect(() => {
     const interval = setInterval(() => {
       if (course) {
         const hasProcessing = course.lectures.some(lecture => lecture.status === 'processing');
