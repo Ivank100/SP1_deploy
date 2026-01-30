@@ -1002,13 +1002,17 @@ async def update_student_assignment(
             raise HTTPException(status_code=404, detail="Student is not enrolled in this course")
 
         role = payload.role.lower() if payload.role else None
+        fields_set = payload.model_fields_set
+        role_provided = "role" in fields_set
+        section_provided = "section_id" in fields_set
+        group_provided = "group_id" in fields_set
         if role and role not in ("student", "ta"):
             raise HTTPException(status_code=400, detail="Role must be student or ta")
 
         section_id = payload.section_id
         group_id = payload.group_id
 
-        if section_id is not None:
+        if section_provided and section_id is not None:
             cur.execute(
                 "SELECT 1 FROM course_sections WHERE id = %s AND course_id = %s",
                 (section_id, course_id),
@@ -1016,7 +1020,7 @@ async def update_student_assignment(
             if not cur.fetchone():
                 raise HTTPException(status_code=400, detail="Selected section does not belong to this course")
 
-        if group_id is not None:
+        if group_provided and group_id is not None:
             cur.execute(
                 "SELECT 1 FROM section_groups WHERE id = %s",
                 (group_id,),
@@ -1025,7 +1029,7 @@ async def update_student_assignment(
             if not group:
                 raise HTTPException(status_code=400, detail="Selected group does not exist")
 
-            if section_id is not None:
+            if section_provided and section_id is not None:
                 cur.execute(
                     "SELECT 1 FROM section_groups WHERE id = %s AND section_id = %s",
                     (group_id, section_id),
@@ -1036,12 +1040,21 @@ async def update_student_assignment(
         cur.execute(
             """
             UPDATE user_courses
-            SET role = COALESCE(%s, role),
-                section_id = COALESCE(%s, section_id),
-                group_id = %s
+            SET role = CASE WHEN %s THEN COALESCE(%s, role) ELSE role END,
+                section_id = CASE WHEN %s THEN %s ELSE section_id END,
+                group_id = CASE WHEN %s THEN %s ELSE group_id END
             WHERE user_id = %s AND course_id = %s
             """,
-            (role, section_id, group_id, student_id, course_id),
+            (
+                role_provided,
+                role,
+                section_provided,
+                section_id,
+                group_provided,
+                group_id,
+                student_id,
+                course_id,
+            ),
         )
         conn.commit()
 

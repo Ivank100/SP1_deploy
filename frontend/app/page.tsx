@@ -11,6 +11,7 @@ export default function Home() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [hiddenCourseIds, setHiddenCourseIds] = useState<number[]>([]);
   const [hiddenTermKeys, setHiddenTermKeys] = useState<string[]>([]);
+  const [hiddenPrefsLoaded, setHiddenPrefsLoaded] = useState(false);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [creatingCourse, setCreatingCourse] = useState(false);
   const [newCourseName, setNewCourseName] = useState('');
@@ -77,12 +78,13 @@ export default function Home() {
         setHiddenCourseIds([]);
       }
     }
+    setHiddenPrefsLoaded(true);
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !hiddenPrefsLoaded) return;
     localStorage.setItem('hidden_course_ids', JSON.stringify(hiddenCourseIds));
-  }, [hiddenCourseIds]);
+  }, [hiddenCourseIds, hiddenPrefsLoaded]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -97,9 +99,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !hiddenPrefsLoaded) return;
     localStorage.setItem('hidden_term_keys', JSON.stringify(hiddenTermKeys));
-  }, [hiddenTermKeys]);
+  }, [hiddenTermKeys, hiddenPrefsLoaded]);
 
   // Refetch courses when tab becomes visible (e.g. student was added by instructor in another tab)
   useEffect(() => {
