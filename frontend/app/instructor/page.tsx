@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiClient, TrendsResponse, LectureHealthResponse, QueryListResponse, Course, Lecture } from '@/lib/api';
+import { apiClient, LectureHealthResponse, QueryListResponse, Course, Lecture } from '@/lib/api';
 import Link from 'next/link';
 
 export default function InstructorDashboard() {
@@ -12,11 +12,11 @@ export default function InstructorDashboard() {
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [selectedLectureId, setSelectedLectureId] = useState<number | null>(null);
-  const [trends, setTrends] = useState<TrendsResponse | null>(null);
   const [health, setHealth] = useState<LectureHealthResponse | null>(null);
   const [queries, setQueries] = useState<QueryListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'queries'>('overview');
+  const [showAllRecurringTopics, setShowAllRecurringTopics] = useState(false);
 
   useEffect(() => {
     // Check authentication
@@ -78,19 +78,16 @@ export default function InstructorDashboard() {
       const lectureIdParam = selectedLectureId !== null && selectedLectureId !== undefined ? selectedLectureId : undefined;
       const courseIdParam = selectedCourseId !== null && selectedCourseId !== undefined ? selectedCourseId : undefined;
       
-      const [trendsData, healthData, queriesData] = await Promise.all([
-        apiClient.getTrends(56, 'week', courseIdParam, lectureIdParam),
+      const [healthData, queriesData] = await Promise.all([
         apiClient.getLectureHealth(courseIdParam, lectureIdParam),
         apiClient.getAllQueries(1000, lectureIdParam, courseIdParam),
       ]);
-      
-      setTrends(trendsData);
+
       setHealth(healthData);
       setQueries(queriesData);
     } catch (error) {
       console.error('Failed to load analytics:', error);
       // Set empty data on error
-      setTrends({ trends: [], period: 'week', days: 56 });
       setHealth({ lectures: [], total_lectures: 0 });
       setQueries({ queries: [], total: 0 });
     } finally {
@@ -114,6 +111,171 @@ export default function InstructorDashboard() {
 
   const queriesList = queries?.queries ?? [];
   const totalQuestions = Math.max(queries?.total ?? 0, queriesList.length);
+  const BLACKLIST_PATTERNS = [
+    /teacher'?s name/i,
+    /who is the teacher/i,
+    /^h$/i,
+    /^hi$/i,
+    /^ok$/i,
+    /^what'?s that$/i,
+  ];
+  const STOP_WORDS = new Set([
+    'the',
+    'a',
+    'an',
+    'of',
+    'to',
+    'in',
+    'is',
+    'are',
+    'there',
+    'types',
+    'it',
+    'that',
+    'this',
+    'these',
+    'those',
+    'and',
+    'or',
+  ]);
+  const PREFIX_PATTERNS = [
+    /^what is\s+/,
+    /^what are\s+/,
+    /^what does\s+/,
+    /^what do\s+/,
+    /^how to\s+/,
+    /^how do\s+/,
+    /^how does\s+/,
+    /^define\s+/,
+    /^explain\s+/,
+    /^difference between\s+/,
+    /^what'?s\s+/,
+    /^whats\s+/,
+  ];
+  const SYNONYM_MAP: Record<string, string> = {
+    'i/o': 'io',
+    'io': 'io',
+    'syscall': 'system call',
+    'irq': 'interrupt',
+    'os': 'os',
+  };
+  const formatAcronym = (token: string) => {
+    const map: Record<string, string> = {
+      io: 'I/O',
+      cpu: 'CPU',
+      ram: 'RAM',
+      dma: 'DMA',
+      os: 'OS',
+      api: 'API',
+      irq: 'IRQ',
+    };
+    return map[token] || token;
+  };
+  const extractTopicTokens = (text: string) => {
+    let normalized = text.toLowerCase().replace(/[^\w\s/]/g, ' ').replace(/\s+/g, ' ').trim();
+    for (const pattern of PREFIX_PATTERNS) {
+      if (pattern.test(normalized)) {
+        normalized = normalized.replace(pattern, '').trim();
+        break;
+      }
+    }
+    Object.entries(SYNONYM_MAP).forEach(([from, to]) => {
+      normalized = normalized.replace(new RegExp(`\\b${from}\\b`, 'g'), to);
+    });
+    const tokens = normalized
+      .split(' ')
+      .map((token) => token.trim())
+      .filter(Boolean)
+      .map((token) => {
+        if (token.endsWith('s') && token.length > 3 && !token.endsWith('ss')) {
+          return token.slice(0, -1);
+        }
+        return token;
+      })
+      .filter((token) => !STOP_WORDS.has(token));
+    return tokens;
+  };
+  const jaccard = (a: Set<string>, b: Set<string>) => {
+    const aList = Array.from(a);
+    const bList = Array.from(b);
+    const intersection = new Set(aList.filter((t) => b.has(t)));
+    const union = new Set([...aList, ...bList]);
+    return union.size === 0 ? 0 : intersection.size / union.size;
+  };
+  const makeTopicLabel = (tokenFreq: Map<string, number>, count: number) => {
+    const entries = Array.from(tokenFreq.entries()).sort((a, b) => b[1] - a[1]);
+    const tokens = entries.slice(0, 3).map(([token]) => token);
+    if (tokens.includes('system') && tokens.includes('call')) {
+      return 'System Calls';
+    }
+    if (tokens.includes('io') && tokens.includes('management')) {
+      return 'I/O Management';
+    }
+    const label = tokens
+      .map((token) => formatAcronym(token))
+      .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+      .join(' ');
+    if (tokens.length === 1 && count > 1 && !label.endsWith('s') && !label.endsWith('ing')) {
+      return `${label}s`;
+    }
+    return label;
+  };
+  const clusters: Array<{
+    tokenSet: Set<string>;
+    tokenFreq: Map<string, number>;
+    questions: string[];
+  }> = [];
+  let ignoredCount = 0;
+  queriesList.forEach((q) => {
+    const question = q.question || '';
+    if (!question || BLACKLIST_PATTERNS.some((pattern) => pattern.test(question.trim()))) {
+      ignoredCount += 1;
+      return;
+    }
+    const tokens = extractTopicTokens(question);
+    if (tokens.length === 0) {
+      ignoredCount += 1;
+      return;
+    }
+    const tokenSet = new Set(tokens);
+    let matchedCluster = clusters.find((cluster) => {
+      const tokenList = Array.from(tokenSet);
+      const clusterList = Array.from(cluster.tokenSet);
+      const shared = tokenList.filter((t) => cluster.tokenSet.has(t)).length;
+      const subset =
+        tokenList.every((t) => cluster.tokenSet.has(t)) ||
+        clusterList.every((t) => tokenSet.has(t));
+      return jaccard(tokenSet, cluster.tokenSet) >= 0.4 || shared >= 2 || subset;
+    });
+    if (!matchedCluster) {
+      const newCluster = {
+        tokenSet: new Set(tokenSet),
+        tokenFreq: new Map(tokens.map((t) => [t, 1])),
+        questions: [question],
+      };
+      clusters.push(newCluster);
+    } else {
+      const target = matchedCluster;
+      target.questions.push(question);
+      tokens.forEach((token) => {
+        target.tokenSet.add(token);
+        target.tokenFreq.set(token, (target.tokenFreq.get(token) || 0) + 1);
+      });
+    }
+  });
+  const topicsAll = clusters
+    .map((cluster) => ({
+      topic: makeTopicLabel(cluster.tokenFreq, cluster.questions.length),
+      count: cluster.questions.length,
+      questions: cluster.questions,
+    }))
+    .filter((topic) => topic.count >= 1)
+    .sort((a, b) => b.count - a.count);
+  const recurringTopics = topicsAll.filter((topic) => topic.count >= 2);
+  const visibleRecurringTopics = showAllRecurringTopics
+    ? topicsAll
+    : topicsAll.slice(0, 2);
+  const remainingRecurringCount = Math.max(0, topicsAll.length - visibleRecurringTopics.length);
   const now = new Date();
   const sevenDaysAgo = new Date(now);
   sevenDaysAgo.setDate(now.getDate() - 7);
@@ -141,49 +303,12 @@ export default function InstructorDashboard() {
       if (!key) return;
       counts.set(key, (counts.get(key) || 0) + 1);
     });
-    return [...counts.entries()]
+    return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
   })();
 
-  const trendPoints = trends?.trends ?? [];
-  const trendDelta =
-    trendPoints.length >= 2
-      ? trendPoints[trendPoints.length - 1].count - trendPoints[0].count
-      : 0;
-  const trendDirection = trendDelta > 0 ? 'up' : trendDelta < 0 ? 'down' : 'flat';
-
-  const renderTrendLine = () => {
-    if (!trendPoints.length) {
-      return <p className="text-sm text-gray-500">No trend data available yet.</p>;
-    }
-    const width = 640;
-    const height = 200;
-    const padding = 24;
-    const maxValue = Math.max(1, ...trendPoints.map((t) => t.count));
-    const xStep =
-      trendPoints.length > 1 ? (width - padding * 2) / (trendPoints.length - 1) : 0;
-    const points = trendPoints
-      .map((t, idx) => {
-        const x = padding + idx * xStep;
-        const y = height - padding - (t.count / maxValue) * (height - padding * 2);
-        return `${x},${y}`;
-      })
-      .join(' ');
-    return (
-      <div>
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-48">
-          <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#E5E7EB" strokeWidth="1" />
-          <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#E5E7EB" strokeWidth="1" />
-          <polyline fill="none" stroke="#2563EB" strokeWidth="2" points={points} />
-        </svg>
-        <div className="flex justify-between text-xs text-gray-500 mt-2">
-          <span>{trendPoints[0].period}</span>
-          <span>{trendPoints[trendPoints.length - 1].period}</span>
-        </div>
-      </div>
-    );
-  };
+  const lecturesWithQuestions = health?.lectures?.filter((lecture) => lecture.query_count > 0).length ?? 0;
 
   const renderLectureBars = () => {
     if (!health?.lectures?.length) {
@@ -199,6 +324,32 @@ export default function InstructorDashboard() {
           <div key={lecture.lecture_id} className="flex items-center gap-3">
             <div className="w-48 text-sm text-gray-700 truncate" title={lecture.lecture_name}>
               {lecture.lecture_name}
+            </div>
+            <div className="flex-1 bg-gray-100 rounded-full h-3">
+              <div
+                className="bg-primary-500 h-3 rounded-full"
+                style={{ width: `${(lecture.query_count / maxValue) * 100}%` }}
+              />
+            </div>
+            <div className="text-sm text-gray-600 w-12 text-right">{lecture.query_count}</div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderLectureBarsAll = () => {
+    if (!health?.lectures?.length) {
+      return <p className="text-sm text-gray-500">No lecture data available yet.</p>;
+    }
+    const items = [...health.lectures].sort((a, b) => b.query_count - a.query_count);
+    const maxValue = Math.max(1, ...items.map((l) => l.query_count));
+    return (
+      <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+        {items.map((lecture) => (
+          <div key={lecture.lecture_id} className="flex items-center gap-3">
+            <div className="w-56 text-sm text-gray-700 truncate" title={lecture.lecture_name}>
+              {lecture.lecture_name || 'Lecture'}
             </div>
             <div className="flex-1 bg-gray-100 rounded-full h-3">
               <div
@@ -364,14 +515,68 @@ export default function InstructorDashboard() {
                 </p>
               </div>
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-                <p className="text-xs text-gray-500 mb-1">Trend (last 7 days)</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {trendDirection === 'up' && `↑ ${Math.abs(trendDelta)}`}
-                  {trendDirection === 'down' && `↓ ${Math.abs(trendDelta)}`}
-                  {trendDirection === 'flat' && '→ 0'}
+                <p className="text-xs text-gray-500 mb-1">Lectures with questions</p>
+                <p className="text-2xl font-bold text-gray-900">{lecturesWithQuestions}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  of {health?.lectures?.length ?? 0} lectures
                 </p>
-                <p className="text-xs text-gray-500 mt-1">Weekly change</p>
               </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xl font-semibold text-gray-900">Course Overview</h2>
+                <span className="text-xs text-gray-500">{recurringTopics.length} recurring topics</span>
+              </div>
+              <p className="text-sm text-gray-500 mb-4">
+                Key concepts that students are repeatedly confused about.
+              </p>
+              {ignoredCount > 0 && (
+                <p className="text-xs text-gray-500 mb-3">
+                  {ignoredCount} question{ignoredCount === 1 ? '' : 's'} ignored (non-conceptual).
+                </p>
+              )}
+              {visibleRecurringTopics.length === 0 ? (
+                <p className="text-sm text-gray-500">No topics yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {visibleRecurringTopics.map((topic, index) => (
+                    <div key={`${topic.topic}-${index}`} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                      <div className="flex items-start justify-between mb-1">
+                        <p className="font-medium text-gray-900">
+                          {index + 1}. {topic.topic}
+                        </p>
+                        <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded">
+                          {topic.count} questions
+                        </span>
+                      </div>
+                      <div className="mt-2 text-xs text-gray-600 space-y-1">
+                        {topic.questions.slice(0, 2).map((q, i) => (
+                          <p key={i} className="pl-2 border-l-2 border-gray-300">"{q}"</p>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {remainingRecurringCount > 0 && !showAllRecurringTopics && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllRecurringTopics(true)}
+                  className="mt-3 text-sm text-gray-600 hover:text-gray-800"
+                >
+                  Show more (+{remainingRecurringCount} remaining topics)
+                </button>
+              )}
+              {showAllRecurringTopics && topicsAll.length > 2 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllRecurringTopics(false)}
+                  className="mt-3 text-sm text-gray-600 hover:text-gray-800"
+                >
+                  Show less
+                </button>
+              )}
             </div>
 
             {/* Charts */}
@@ -381,8 +586,8 @@ export default function InstructorDashboard() {
                 {renderLectureBars()}
               </div>
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4">Questions per Week</h2>
-                {renderTrendLine()}
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">Questions per Lecture (all)</h2>
+                {renderLectureBarsAll()}
               </div>
             </div>
 

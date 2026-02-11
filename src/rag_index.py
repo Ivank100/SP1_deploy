@@ -11,10 +11,13 @@ from .db import (
     insert_chunks,
     save_lecture_transcript,
     update_lecture_status,
+    clear_chunks_for_lecture,
+    update_lecture_file,
+    reset_lecture_materials,
 )
 from .file_utils import save_uploaded_file
 
-MAX_CHUNKS_FOR_V0 = 80  # safe for your size
+MAX_CHUNKS_FOR_V0 = 200  # allow more coverage for longer PDFs
 
 
 def _embed_and_store_chunks(lecture_id: int, chunks_payload: Iterable[Any]):
@@ -90,6 +93,46 @@ def ingest_pdf(path: str, original_name: str | None = None, course_id: int | Non
     update_lecture_status(lecture_id, "completed")
     
     print(f"[SUCCESS] Ingested {path} as lecture_id={lecture_id}, {len(chunks_with_pages)} chunks")
+    return lecture_id
+
+
+def replace_lecture_pdf(lecture_id: int, path: str, original_name: str | None = None):
+    """
+    Replace an existing lecture's PDF and reprocess chunks.
+    """
+    print(f"[INFO] Replacing PDF for lecture_id={lecture_id}: {path}")
+    text_pages = extract_text_with_pages(path)
+    if not text_pages:
+        print(f"[ERROR] No text found in PDF: {path}")
+        return None
+
+    page_count = len(text_pages)
+    original_name = original_name or Path(path).name
+    stored_path = save_uploaded_file(path, original_name)
+    print(f"[INFO] Saved replacement file to: {stored_path}")
+
+    update_lecture_file(
+        lecture_id=lecture_id,
+        original_name=original_name,
+        file_path=stored_path,
+        page_count=page_count,
+        file_type="pdf",
+    )
+    reset_lecture_materials(lecture_id)
+    clear_chunks_for_lecture(lecture_id)
+
+    chunks_with_pages = chunk_text_with_pages(text_pages)
+    if len(chunks_with_pages) > MAX_CHUNKS_FOR_V0:
+        print(f"[WARN] Too many chunks ({len(chunks_with_pages)}). Keeping only first {MAX_CHUNKS_FOR_V0}.")
+        chunks_with_pages = chunks_with_pages[:MAX_CHUNKS_FOR_V0]
+
+    if not chunks_with_pages:
+        update_lecture_status(lecture_id, "failed")
+        return None
+
+    _embed_and_store_chunks(lecture_id, chunks_with_pages)
+    update_lecture_status(lecture_id, "completed")
+    print(f"[SUCCESS] Replaced lecture_id={lecture_id}, {len(chunks_with_pages)} chunks")
     return lecture_id
 
 def ingest_audio(path: str, original_name: str | None = None, course_id: int | None = None, created_by: int | None = None):

@@ -44,7 +44,7 @@ class DeepSeekClient:
         messages,
         model: str = "openrouter/auto",
         temperature: float = 0.2,
-        max_tokens: int = 1200,
+        max_tokens: int = 303,
     ) -> str:
         # OpenRouter is OpenAI-compatible: /chat/completions
         url = f"{self.base_url}/chat/completions"

@@ -72,6 +72,12 @@ def _prepare_context(
 
 def get_materials(lecture_id: int) -> Dict[str, Any]:
     materials = get_lecture_study_materials(lecture_id) or {"summary": None, "key_points": []}
+    def is_bad_flashcard(text: str) -> bool:
+        trimmed = (text or "").strip()
+        if not trimmed or not re.search(r"[a-zA-Z0-9]", trimmed):
+            return True
+        cleaned = re.sub(r'[^a-z0-9_]+', '', trimmed.lower())
+        return cleaned in {"question", "answer", "keypoint_index", "keypointindex"}
     
     # Get flashcards - handle both old and new schema
     flashcard_rows = list_flashcards(lecture_id)
@@ -83,24 +89,32 @@ def get_materials(lecture_id: int) -> Dict[str, Any]:
                 # New schema: (id, question, answer, source_keypoint_id, quality_score)
                 if len(row) >= 3 and row[1] and not hasattr(row[1], '__len__') or isinstance(row[1], str):
                     # Likely new schema
+                    question = row[1] if len(row) > 1 else ""
+                    answer = row[2] if len(row) > 2 else ""
+                    if is_bad_flashcard(question) or is_bad_flashcard(answer):
+                        continue
                     flashcards.append({
                         "id": row[0],
-                        "question": row[1] if len(row) > 1 else "",
-                        "answer": row[2] if len(row) > 2 else "",
-                        "front": row[1] if len(row) > 1 else "",
-                        "back": row[2] if len(row) > 2 else "",
+                        "question": question,
+                        "answer": answer,
+                        "front": question,
+                        "back": answer,
                         "source_keypoint_id": row[3] if len(row) > 3 else None,
                         "quality_score": row[4] if len(row) > 4 else None,
                         "page_number": None,
                     })
                 else:
                     # Old schema: (id, front, back, page_number)
+                    question = row[1] if len(row) > 1 else ""
+                    answer = row[2] if len(row) > 2 else ""
+                    if is_bad_flashcard(question) or is_bad_flashcard(answer):
+                        continue
                     flashcards.append({
                         "id": row[0],
-                        "front": row[1] if len(row) > 1 else "",
-                        "back": row[2] if len(row) > 2 else "",
-                        "question": row[1] if len(row) > 1 else "",
-                        "answer": row[2] if len(row) > 2 else "",
+                        "front": question,
+                        "back": answer,
+                        "question": question,
+                        "answer": answer,
                         "page_number": row[3] if len(row) > 3 else None,
                     })
     
@@ -129,7 +143,7 @@ def generate_summary(lecture_id: int) -> str:
             ),
         },
     ]
-    summary = client.chat(messages, max_tokens=1200).strip()
+    summary = client.chat(messages, max_tokens=303).strip()
     save_lecture_summary(lecture_id, summary)
     return summary
 
@@ -141,19 +155,23 @@ def generate_key_points(lecture_id: int) -> List[str]:
     messages = [
         {
             "role": "system",
-            "content": "You extract key bullet points from lecture content.",
+            "content": "You extract concise noun-phrase key points from lecture content.",
         },
         {
             "role": "user",
             "content": (
-            "Read the context and return a NEW set of 3-5 essential key points as a JSON array of strings. "
-            "Avoid repeating the exact same sentences; vary wording when possible. "
-                "Each key point should be concise (max 25 words) and reflect the lecture content only.\n\n"
+                "Output ONLY a JSON array of strings.\n"
+                "Return 5-8 key points.\n"
+                "Each key point must be a noun phrase (no full sentences).\n"
+                "3-8 words each, no ending period.\n"
+                "No verbs like includes / involves / manages.\n"
+                "No punctuation except / and -.\n"
+                "Use lecture terminology only.\n\n"
                 f"Context:\n{context}\n\nJSON array:"
             ),
         },
     ]
-    response = client.chat(messages, max_tokens=800, temperature=0.6).strip()
+    response = client.chat(messages, max_tokens=303, temperature=0.3).strip()
     key_points: List[str]
     try:
         parsed = json.loads(response)
@@ -165,9 +183,17 @@ def generate_key_points(lecture_id: int) -> List[str]:
         key_points = [line.strip("-• ") for line in response.splitlines() if line.strip()]
         key_points = key_points[:5]
     if key_points:
-        key_points = [re.sub(r"^\s*\d+\.\s*", "", point).strip() for point in key_points]
-        key_points = [point for point in key_points if point]
-        key_points = key_points[:5]
+        cleaned_points = []
+        for point in key_points:
+            cleaned = re.sub(r"^\s*\d+\.\s*", "", point).strip()
+            cleaned = re.sub(r"[.]", "", cleaned)
+            cleaned = re.sub(r"\b(includes|involves|manages|covers|describes)\b.*", "", cleaned).strip()
+            words = cleaned.split()
+            if len(words) > 8:
+                cleaned = " ".join(words[:8])
+            if cleaned:
+                cleaned_points.append(cleaned)
+        key_points = cleaned_points[:8]
     if not key_points:
         # Fallback: derive concise points from context when model response is unusable
         sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", context.strip()) if s.strip()]
@@ -177,13 +203,16 @@ def generate_key_points(lecture_id: int) -> List[str]:
             cleaned = re.sub(r"\s+", " ", sentence).strip()
             if not cleaned:
                 continue
+            cleaned = re.sub(r"[.]", "", cleaned)
+            cleaned = re.sub(r"\b(includes|involves|manages|covers|describes)\b.*", "", cleaned).strip()
             words = cleaned.split()
-            if len(words) > 25:
-                cleaned = " ".join(words[:25]) + "..."
-            fallback_points.append(cleaned)
-            if len(fallback_points) >= 5:
+            if len(words) > 8:
+                cleaned = " ".join(words[:8])
+            if cleaned:
+                fallback_points.append(cleaned)
+            if len(fallback_points) >= 6:
                 break
-        key_points = fallback_points[:5]
+        key_points = fallback_points[:6]
     if not key_points:
         raise ValueError("Could not extract key points from model response")
     save_lecture_key_points(lecture_id, key_points)
@@ -210,7 +239,7 @@ def generate_flashcards(lecture_id: int) -> List[Dict[str, Any]]:
             ),
         },
     ]
-    response = client.chat(messages, max_tokens=1200).strip()
+    response = client.chat(messages, max_tokens=303).strip()
 
     def _normalize_flashcard(text: str) -> Tuple[str, str]:
         cleaned = re.sub(r"^\s*\d+\.\s*", "", text).strip()

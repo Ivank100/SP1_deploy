@@ -11,6 +11,7 @@ import {
   CourseStudent,
   UploadRequest,
   LectureHealthMetric,
+  QueryListItem,
 } from '@/lib/api';
 import FileUpload from '@/components/FileUpload';
 import LectureList from '@/components/LectureList';
@@ -53,6 +54,17 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
   const [analytics, setAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [topConfusedLecture, setTopConfusedLecture] = useState<string | null>(null);
+  const [lectureHealth, setLectureHealth] = useState<LectureHealthMetric[]>([]);
+  const [courseQueries, setCourseQueries] = useState<QueryListItem[]>([]);
+  const [courseQueryTotal, setCourseQueryTotal] = useState<number | null>(null);
+  const [courseStudents, setCourseStudents] = useState<CourseStudent[]>([]);
+  const [showQuestionDetails, setShowQuestionDetails] = useState(false);
+  const [showStudentDetails, setShowStudentDetails] = useState(false);
+  const [showConfusedLectures, setShowConfusedLectures] = useState(false);
+  const [showAllTopics, setShowAllTopics] = useState(false);
+  const [loadingQuestionDetails, setLoadingQuestionDetails] = useState(false);
+  const [loadingStudentDetails, setLoadingStudentDetails] = useState(false);
+  const [loadingConfusedLectureDetails, setLoadingConfusedLectureDetails] = useState(false);
 
   useEffect(() => {
     loadAnalytics();
@@ -60,9 +72,12 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
 
   const loadAnalytics = async () => {
     try {
-      const data = await apiClient.getCourseAnalytics(courseId);
+      const [data, health] = await Promise.all([
+        apiClient.getCourseAnalytics(courseId),
+        apiClient.getLectureHealth(courseId),
+      ]);
       setAnalytics(data);
-      const health = await apiClient.getLectureHealth(courseId);
+      setLectureHealth(health.lectures);
       const topLecture = health.lectures.reduce<{ lecture_name: string; query_count: number } | null>(
         (max, current) => {
           if (!max || current.query_count > max.query_count) {
@@ -77,6 +92,43 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
       console.error('Failed to load analytics:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadQuestionDetails = async () => {
+    setLoadingQuestionDetails(true);
+    try {
+      const response = await apiClient.getAllQueries(1000, undefined, courseId);
+      setCourseQueries(response.queries);
+      setCourseQueryTotal(response.total);
+    } catch (error) {
+      console.error('Failed to load course queries:', error);
+    } finally {
+      setLoadingQuestionDetails(false);
+    }
+  };
+
+  const loadStudentDetails = async () => {
+    setLoadingStudentDetails(true);
+    try {
+      const students = await apiClient.getCourseStudents(courseId);
+      setCourseStudents(students);
+    } catch (error) {
+      console.error('Failed to load course students:', error);
+    } finally {
+      setLoadingStudentDetails(false);
+    }
+  };
+
+  const loadConfusedLectureDetails = async () => {
+    setLoadingConfusedLectureDetails(true);
+    try {
+      const health = await apiClient.getLectureHealth(courseId);
+      setLectureHealth(health.lectures);
+    } catch (error) {
+      console.error('Failed to load lecture health:', error);
+    } finally {
+      setLoadingConfusedLectureDetails(false);
     }
   };
 
@@ -104,6 +156,177 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
     );
   }
 
+  const BLACKLIST_PATTERNS = [
+    /teacher'?s name/i,
+    /who is the teacher/i,
+    /^h$/i,
+    /^hi$/i,
+    /^ok$/i,
+    /^what'?s that$/i,
+  ];
+  const STOP_WORDS = new Set([
+    'the',
+    'a',
+    'an',
+    'of',
+    'to',
+    'in',
+    'is',
+    'are',
+    'there',
+    'types',
+    'it',
+    'that',
+    'this',
+    'these',
+    'those',
+    'and',
+    'or',
+  ]);
+  const PREFIX_PATTERNS = [
+    /^what is\s+/,
+    /^what are\s+/,
+    /^what does\s+/,
+    /^what do\s+/,
+    /^how to\s+/,
+    /^how do\s+/,
+    /^how does\s+/,
+    /^define\s+/,
+    /^explain\s+/,
+    /^difference between\s+/,
+    /^what'?s\s+/,
+    /^whats\s+/,
+  ];
+  const SYNONYM_MAP: Record<string, string> = {
+    'i/o': 'io',
+    'io': 'io',
+    'syscall': 'system call',
+    'irq': 'interrupt',
+    'os': 'os',
+  };
+  const formatAcronym = (token: string) => {
+    const map: Record<string, string> = {
+      io: 'I/O',
+      cpu: 'CPU',
+      ram: 'RAM',
+      dma: 'DMA',
+      os: 'OS',
+      api: 'API',
+      irq: 'IRQ',
+    };
+    return map[token] || token;
+  };
+  const extractTopicTokens = (text: string) => {
+    let normalized = text.toLowerCase().replace(/[^\w\s/]/g, ' ').replace(/\s+/g, ' ').trim();
+    for (const pattern of PREFIX_PATTERNS) {
+      if (pattern.test(normalized)) {
+        normalized = normalized.replace(pattern, '').trim();
+        break;
+      }
+    }
+    Object.entries(SYNONYM_MAP).forEach(([from, to]) => {
+      normalized = normalized.replace(new RegExp(`\\b${from}\\b`, 'g'), to);
+    });
+    const tokens = normalized
+      .split(' ')
+      .map((token) => token.trim())
+      .filter(Boolean)
+      .map((token) => {
+        if (token.endsWith('s') && token.length > 3 && !token.endsWith('ss')) {
+          return token.slice(0, -1);
+        }
+        return token;
+      })
+      .filter((token) => !STOP_WORDS.has(token));
+    return tokens;
+  };
+  const jaccard = (a: Set<string>, b: Set<string>) => {
+    const aList = Array.from(a);
+    const bList = Array.from(b);
+    const intersection = new Set(aList.filter((t) => b.has(t)));
+    const union = new Set([...aList, ...bList]);
+    return union.size === 0 ? 0 : intersection.size / union.size;
+  };
+  const makeTopicLabel = (tokenFreq: Map<string, number>, count: number) => {
+    const entries = Array.from(tokenFreq.entries()).sort((a, b) => b[1] - a[1]);
+    const tokens = entries.slice(0, 3).map(([token]) => token);
+    if (tokens.includes('system') && tokens.includes('call')) {
+      return 'System Calls';
+    }
+    if (tokens.includes('io') && tokens.includes('management')) {
+      return 'I/O Management';
+    }
+    const label = tokens
+      .map((token) => formatAcronym(token))
+      .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+      .join(' ');
+    if (tokens.length === 1 && count > 1 && !label.endsWith('s') && !label.endsWith('ing')) {
+      return `${label}s`;
+    }
+    return label;
+  };
+
+  const sortedStudents = [...courseStudents].sort((a, b) => b.questions_count - a.questions_count);
+  const sortedConfusedLectures = [...lectureHealth].sort((a, b) => b.query_count - a.query_count);
+  const rawTopics = analytics.top_confused_topics || [];
+  const clusters: Array<{
+    tokenSet: Set<string>;
+    tokenFreq: Map<string, number>;
+    questions: string[];
+  }> = [];
+  let ignoredCount = 0;
+  rawTopics.forEach((topic: any) => {
+    const questions = topic.questions || (topic.topic ? [topic.topic] : []);
+    questions.forEach((q: string) => {
+      if (!q || BLACKLIST_PATTERNS.some((pattern) => pattern.test(q.trim()))) {
+        ignoredCount += 1;
+        return;
+      }
+      const tokens = extractTopicTokens(q);
+      if (tokens.length === 0) {
+        ignoredCount += 1;
+        return;
+      }
+      const tokenSet = new Set(tokens);
+      let matchedCluster = clusters.find((cluster) => {
+        const tokenList = Array.from(tokenSet);
+        const clusterList = Array.from(cluster.tokenSet);
+        const shared = tokenList.filter((t) => cluster.tokenSet.has(t)).length;
+        const subset =
+          tokenList.every((t) => cluster.tokenSet.has(t)) ||
+          clusterList.every((t) => tokenSet.has(t));
+        return jaccard(tokenSet, cluster.tokenSet) >= 0.4 || shared >= 2 || subset;
+      });
+      if (!matchedCluster) {
+        const newCluster = {
+          tokenSet: new Set(tokenSet),
+          tokenFreq: new Map(tokens.map((t) => [t, 1])),
+          questions: [q],
+        };
+        clusters.push(newCluster);
+      } else {
+        const target = matchedCluster;
+        target.questions.push(q);
+        tokens.forEach((token) => {
+          target.tokenSet.add(token);
+          target.tokenFreq.set(token, (target.tokenFreq.get(token) || 0) + 1);
+        });
+      }
+    });
+  });
+  const topicsAll = clusters
+    .map((cluster) => ({
+      topic: makeTopicLabel(cluster.tokenFreq, cluster.questions.length),
+      count: cluster.questions.length,
+      questions: cluster.questions,
+    }))
+    .filter((topic) => topic.count >= 1)
+    .sort((a, b) => b.count - a.count);
+  const recurringTopics = topicsAll.filter((topic) => topic.count >= 2);
+  const topics = topicsAll;
+  const visibleTopics = showAllTopics ? topics : topics.slice(0, 2);
+  const remainingTopicCount = Math.max(0, topics.length - visibleTopics.length);
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-6">Course Analytics Overview</h3>
@@ -113,21 +336,53 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
         
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+          <button
+            type="button"
+            onClick={async () => {
+              const next = !showQuestionDetails;
+              setShowQuestionDetails(next);
+              if (next) {
+                await loadQuestionDetails();
+              }
+            }}
+            className="bg-gray-50 rounded-lg p-4 border border-gray-200 text-left hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
             <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
               <span>💬</span>
               <span>Total Questions</span>
             </div>
             <p className="text-2xl font-bold text-gray-900">{analytics.total_questions}</p>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+            <p className="mt-1 text-xs text-gray-400">Tap to view</p>
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              const next = !showStudentDetails;
+              setShowStudentDetails(next);
+              if (next) {
+                await loadStudentDetails();
+              }
+            }}
+            className="bg-gray-50 rounded-lg p-4 border border-gray-200 text-left hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
             <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
               <span>👥</span>
               <span>Active Students</span>
             </div>
             <p className="text-2xl font-bold text-gray-900">{analytics.active_students}</p>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+            <p className="mt-1 text-xs text-gray-400">Tap to view</p>
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              const next = !showConfusedLectures;
+              setShowConfusedLectures(next);
+              if (next) {
+                await loadConfusedLectureDetails();
+              }
+            }}
+            className="bg-gray-50 rounded-lg p-4 border border-gray-200 text-left hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
             <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
               <span>🧠</span>
               <span>Top Confused Lecture</span>
@@ -135,7 +390,8 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
             <p className="text-sm font-semibold text-gray-900 line-clamp-2">
               {topConfusedLecture || 'No data yet'}
             </p>
-          </div>
+            <p className="mt-1 text-xs text-gray-400">Tap to view</p>
+          </button>
           <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
             <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
               <span>📈</span>
@@ -153,12 +409,103 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
           </div>
         </div>
 
+        {showQuestionDetails && (
+          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-gray-900">All Questions</h4>
+              <span className="text-xs text-gray-500">
+                {courseQueryTotal ?? courseQueries.length} total
+              </span>
+            </div>
+            {loadingQuestionDetails ? (
+              <p className="text-sm text-gray-500">Loading questions...</p>
+            ) : courseQueries.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No questions found. Ask a course question to populate this list.
+              </p>
+            ) : (
+              <div className="max-h-80 overflow-y-auto space-y-3">
+                {courseQueries.map((item) => (
+                  <div key={item.id} className="border border-gray-100 rounded-md p-3 bg-gray-50">
+                    <p className="text-sm text-gray-900">{item.question}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {item.user_email || 'Anonymous'} • {item.lecture_name || 'Course'}{' '}
+                      {item.created_at && `• ${new Date(item.created_at).toLocaleString()}`}
+                    </p>
+                  </div>
+                ))}
+                {courseQueryTotal && courseQueryTotal > courseQueries.length && (
+                  <p className="text-xs text-gray-500">
+                    Showing latest {courseQueries.length} of {courseQueryTotal} questions.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {showStudentDetails && (
+          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-gray-900">Active Students</h4>
+              <span className="text-xs text-gray-500">{sortedStudents.length} listed</span>
+            </div>
+            {loadingStudentDetails ? (
+              <p className="text-sm text-gray-500">Loading students...</p>
+            ) : sortedStudents.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No students found yet. Add students to view their activity.
+              </p>
+            ) : (
+              <div className="max-h-64 overflow-y-auto space-y-2">
+                {sortedStudents.map((student) => (
+                  <div key={student.student_id} className="flex items-center justify-between text-sm">
+                    <span className="text-gray-800">{student.student_email}</span>
+                    <span className="text-gray-500">
+                      {student.questions_count} q{student.questions_count === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {showConfusedLectures && (
+          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-gray-900">Top Confused Lectures</h4>
+              <span className="text-xs text-gray-500">{sortedConfusedLectures.length} listed</span>
+            </div>
+            {loadingConfusedLectureDetails ? (
+              <p className="text-sm text-gray-500">Loading lecture analytics...</p>
+            ) : sortedConfusedLectures.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No lecture analytics yet. Upload lectures or ask questions to generate data.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {sortedConfusedLectures.map((lecture, index) => (
+                  <div key={lecture.lecture_id} className="flex items-center justify-between text-sm">
+                    <span className="text-gray-800">
+                      {index + 1}. {lecture.lecture_name || 'Lecture'}
+                    </span>
+                    <span className="text-gray-500">
+                      {lecture.query_count} q{lecture.query_count === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Course Overview Summary */}
         <div className="bg-primary-50 border border-primary-200 rounded-lg p-4 mb-6">
           <h4 className="font-semibold text-gray-900 mb-2">Course Overview</h4>
           <ul className="text-sm text-gray-700 space-y-1">
             <li>• {analytics.total_questions} questions asked</li>
-            <li>• {analytics.top_confused_topics?.length || 0} recurring topics</li>
+            <li>• {recurringTopics.length} recurring topics</li>
             {analytics.trend_direction === 'up' && (
               <li className="text-red-600">• Confusion increased this week (+{analytics.trend_percentage}%)</li>
             )}
@@ -168,33 +515,62 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
           </ul>
         </div>
 
-        {/* Top Confused Topics */}
-        {analytics.top_confused_topics && analytics.top_confused_topics.length > 0 && (
-          <div>
-            <h4 className="font-semibold text-gray-900 mb-3">Top Confused Topics</h4>
-            <div className="space-y-2">
-              {analytics.top_confused_topics.map((topic: any, index: number) => (
-                <div key={index} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                  <div className="flex items-start justify-between mb-1">
-                    <p className="font-medium text-gray-900">
-                      {index + 1}. {topic.topic}
-                    </p>
-                    <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded">
-                      {topic.count} questions
-                    </span>
-                  </div>
-                  {topic.questions && topic.questions.length > 0 && (
-                    <div className="mt-2 text-xs text-gray-600 space-y-1">
-                      {topic.questions.slice(0, 2).map((q: string, i: number) => (
-                        <p key={i} className="pl-2 border-l-2 border-gray-300">"{q}"</p>
-                      ))}
+        {/* Confusion Topics */}
+        <div>
+          <h4 className="font-semibold text-gray-900 mb-3">Confusion Topics</h4>
+          {ignoredCount > 0 && (
+            <p className="text-xs text-gray-500 mb-3">
+              {ignoredCount} question{ignoredCount === 1 ? '' : 's'} ignored (non-conceptual).
+            </p>
+          )}
+          {topics.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              No recurring topics yet. Ask more questions to surface patterns.
+            </p>
+          ) : (
+            <>
+              <div className="space-y-2">
+                {visibleTopics.map((topic: any, index: number) => (
+                  <div key={index} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                    <div className="flex items-start justify-between mb-1">
+                      <p className="font-medium text-gray-900">
+                        {index + 1}. {topic.topic}
+                      </p>
+                      <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded">
+                        {topic.count} questions
+                      </span>
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+                    {topic.questions && topic.questions.length > 0 && (
+                      <div className="mt-2 text-xs text-gray-600 space-y-1">
+                        {topic.questions.slice(0, 2).map((q: string, i: number) => (
+                          <p key={i} className="pl-2 border-l-2 border-gray-300">"{q}"</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {remainingTopicCount > 0 && !showAllTopics && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllTopics(true)}
+                  className="mt-3 text-sm text-gray-600 hover:text-gray-800"
+                >
+                  Show more (+{remainingTopicCount} remaining lectures)
+                </button>
+              )}
+              {showAllTopics && topics.length > 2 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllTopics(false)}
+                  className="mt-3 text-sm text-gray-600 hover:text-gray-800"
+                >
+                  Show less
+                </button>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -204,11 +580,15 @@ export default function CourseDetailPage() {
   const router = useRouter();
   const params = useParams();
   const courseId = parseInt(params.id as string);
+  type Category = 'all' | 'analytics' | 'lectures' | 'students' | 'uploads' | 'announcements' | 'questions';
+  const instructorCategories: Category[] = ['all', 'analytics', 'lectures', 'students', 'uploads', 'announcements'];
+  const studentCategories: Category[] = ['all', 'lectures', 'uploads', 'announcements', 'questions'];
   
   const [user, setUser] = useState<User | null>(null);
   const [course, setCourse] = useState<Course | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<Category>('all');
   const [courseQuestion, setCourseQuestion] = useState('');
   const [courseAsking, setCourseAsking] = useState(false);
   const [courseAnswer, setCourseAnswer] = useState<QueryResponse | null>(null);
@@ -327,6 +707,14 @@ export default function CourseDetailPage() {
       loadUploadRequests(courseId);
     }
   }, [user?.role, courseId]);
+
+  useEffect(() => {
+    if (!user?.role) return;
+    const allowed = user.role === 'instructor' ? instructorCategories : studentCategories;
+    if (!allowed.includes(activeCategory)) {
+      setActiveCategory('all');
+    }
+  }, [user?.role, activeCategory, instructorCategories, studentCategories]);
 
   useEffect(() => {
     if (user?.role === 'instructor' && courseId) {
@@ -1189,6 +1577,13 @@ export default function CourseDetailPage() {
   const showAllStudents = showAllStudentLectures[course.id] ?? false;
   const visibleInstructorLectures = showAllInstructor ? instructorLectures : instructorLectures.slice(0, 4);
   const visibleStudentLectures = showAllStudents ? studentLectures : studentLectures.slice(0, 4);
+  const categoryOptions = user?.role === 'instructor' ? instructorCategories : studentCategories;
+  const showLectures = activeCategory === 'all' || activeCategory === 'lectures';
+  const showManageStudentsSection = activeCategory === 'all' || activeCategory === 'students';
+  const showUploads = activeCategory === 'all' || activeCategory === 'uploads';
+  const showAnnouncements = activeCategory === 'all' || activeCategory === 'announcements';
+  const showQuestions = activeCategory === 'all' || activeCategory === 'questions';
+  const showAnalytics = activeCategory === 'all' || activeCategory === 'analytics';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1209,14 +1604,6 @@ export default function CourseDetailPage() {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              {user?.role === 'instructor' && (
-                <Link
-                  href="/instructor"
-                  className="text-sm text-gray-700 hover:text-gray-900"
-                >
-                  Analytics
-                </Link>
-              )}
               {user?.role === 'student' && (
                 <button
                   onClick={handleLeaveCourse}
@@ -1244,319 +1631,325 @@ export default function CourseDetailPage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
-        {/* Zone 1: Instructor overview */}
-        {user?.role === 'instructor' && (
-          <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold text-gray-900">{course.name}</h2>
-                {course.description && (
-                  <p className="text-sm text-gray-600 mt-1">{course.description}</p>
-                )}
-              </div>
-              <span className="px-3 py-1 text-xs font-medium rounded-full bg-green-50 text-green-700 border border-green-100">
-                Active
-              </span>
-            </div>
-            <CourseAnalyticsOverview courseId={course.id} />
-          </div>
-        )}
-
         {/* Zone 2: Course management */}
         <div>
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Course Management</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Left Sidebar - Lectures */}
+          <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-8">
+            <aside className="bg-white border border-gray-200 rounded-xl p-4 h-fit sticky top-24">
+              <h4 className="text-sm font-semibold text-gray-900 mb-3">Functions</h4>
+              <div className="space-y-2">
+                {categoryOptions.map((category) => (
+                  <button
+                    key={category}
+                    onClick={() => setActiveCategory(category)}
+                    className={`w-full px-3 py-2 text-sm rounded-lg border text-left transition ${
+                      activeCategory === category
+                        ? 'bg-primary-600 text-white border-primary-600'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    {category === 'all'
+                      ? 'All'
+                      : category === 'analytics'
+                      ? 'Course Analytics'
+                      : category === 'lectures'
+                      ? 'Lectures'
+                      : category === 'students'
+                      ? 'Manage Students'
+                      : category === 'uploads'
+                      ? 'Upload Requests'
+                      : category === 'announcements'
+                      ? 'Announcements'
+                      : 'Ask Questions'}
+                  </button>
+                ))}
+              </div>
+            </aside>
+
             <div className="space-y-6">
-              <div className={`rounded-xl shadow-sm border ${collapseLectures[course.id] ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}`}>
-                <button
-                  onClick={() =>
-                    setCollapseLectures({ ...collapseLectures, [course.id]: !collapseLectures[course.id] })
-                  }
-                  className="w-full px-6 py-4 flex items-center justify-between text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-base font-semibold text-gray-900">Lectures</h3>
-                    {refreshing && (
-                      <div className="flex items-center space-x-2 text-sm text-gray-500">
-                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                      </div>
-                    )}
-                  </div>
-                  <span className="text-sm text-gray-600">
-                    {collapseLectures[course.id] ? '+' : '−'}
-                  </span>
-                </button>
-                {!collapseLectures[course.id] && (
-                  <div className="px-6 pb-6">
-                    {user?.role === 'instructor' ? (
-                      <FileUpload
-                        courseId={course.id}
-                        onUploadSuccess={handleUploadSuccess}
-                        mode="direct"
-                      />
-                    ) : (
-                      <FileUpload
-                        courseId={course.id}
-                        onUploadSuccess={handleUploadSuccess}
-                        mode="request"
-                      />
-                    )}
-                    <div className="mt-4 space-y-6">
-                      <div>
-                        <h4 className="text-sm font-semibold text-gray-900 mb-2">Instructor uploaded materials</h4>
-                        {instructorLectures.length === 0 ? (
-                          <p className="text-sm text-gray-500">No instructor uploads yet.</p>
-                        ) : (
-                          <LectureList
-                            lectures={visibleInstructorLectures}
-                            onDelete={user?.role === 'instructor' ? handleDelete : undefined}
-                            activityByLectureId={lectureQuestionsById}
-                            avgQuestions={avgQuestions}
-                          />
-                        )}
-                        {instructorLectures.length > 4 && (
-                          <button
-                            onClick={() =>
-                              setShowAllInstructorLectures({
-                                ...showAllInstructorLectures,
-                                [course.id]: !showAllInstructor,
-                              })
-                            }
-                            className="mt-3 text-sm text-gray-600 hover:text-gray-800"
-                          >
-                            {showAllInstructor
-                              ? 'Show less'
-                              : `Show more (+${instructorLectures.length - visibleInstructorLectures.length})`}
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="pt-4 border-t border-gray-200">
-                        <h4 className="text-sm font-semibold text-gray-900 mb-2">Student uploaded materials</h4>
-                        {studentLectures.length === 0 ? (
-                          <p className="text-sm text-gray-500">No student uploads yet.</p>
-                        ) : (
-                          <LectureList
-                            lectures={visibleStudentLectures}
-                            onDelete={user?.role === 'instructor' ? handleDelete : undefined}
-                            activityByLectureId={lectureQuestionsById}
-                            avgQuestions={avgQuestions}
-                          />
-                        )}
-                        {studentLectures.length > 4 && (
-                          <button
-                            onClick={() =>
-                              setShowAllStudentLectures({
-                                ...showAllStudentLectures,
-                                [course.id]: !showAllStudents,
-                              })
-                            }
-                            className="mt-3 text-sm text-gray-600 hover:text-gray-800"
-                          >
-                            {showAllStudents
-                              ? 'Show less'
-                              : `Show more (+${studentLectures.length - visibleStudentLectures.length})`}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {user?.role === 'instructor' && (
-              <div className={`rounded-xl shadow-sm border ${collapseManageStudents[course.id] ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}`}>
-                <button
-                  onClick={async () => {
-                    const nextCollapsed = !collapseManageStudents[course.id];
-                    setCollapseManageStudents({ ...collapseManageStudents, [course.id]: nextCollapsed });
-                    if (!nextCollapsed) {
-                      await loadCourseStudents(course.id);
-                      await loadSections(course.id);
-                      await loadAnnouncements(course.id);
-                      await loadUploadRequests(course.id);
-                      const sectionId = selectedSectionId[course.id];
-                      if (sectionId) {
-                        await loadGroups(course.id, sectionId);
-                      }
+              {user?.role === 'instructor' && showAnalytics && (
+                <CourseAnalyticsOverview courseId={course.id} />
+              )}
+              {showLectures && (
+                <div className={`rounded-xl shadow-sm border ${collapseLectures[course.id] ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}`}>
+                  <button
+                    onClick={() =>
+                      setCollapseLectures({ ...collapseLectures, [course.id]: !collapseLectures[course.id] })
                     }
-                  }}
-                  className="w-full px-6 py-4 flex items-center justify-between text-left"
-                >
-                  <span className="text-base font-semibold text-gray-900">Manage Students</span>
-                  <span className="text-sm text-gray-600">
-                    {collapseManageStudents[course.id] ? '+' : '−'}
-                  </span>
-                </button>
-                {!collapseManageStudents[course.id] && (
-                  <div className="px-6 pb-6">
-                    {renderStudentManagement(course.id)}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {(user?.role === 'instructor' || canReviewUploads[course.id]) && (
-              <div className={`rounded-xl shadow-sm border ${collapseUploadRequests[course.id] ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}`}>
-                <button
-                  onClick={() =>
-                    setCollapseUploadRequests({
-                      ...collapseUploadRequests,
-                      [course.id]: !collapseUploadRequests[course.id],
-                    })
-                  }
-                  className="w-full px-6 py-4 flex items-center justify-between text-left"
-                >
-                  <h3 className="text-base font-semibold text-gray-900">Upload Requests</h3>
-                  <span className="text-sm text-gray-600">
-                    {collapseUploadRequests[course.id] ? '+' : '−'}
-                  </span>
-                </button>
-                {!collapseUploadRequests[course.id] && (
-                  <div className="px-6 pb-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div />
-                      <button
-                        onClick={() => loadUploadRequests(course.id)}
-                        className="text-sm text-gray-500 hover:text-gray-700"
-                      >
-                        Refresh
-                      </button>
+                    className="w-full px-6 py-4 flex items-center justify-between text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-base font-semibold text-gray-900">Lectures</h3>
+                      {refreshing && (
+                        <div className="flex items-center space-x-2 text-sm text-gray-500">
+                          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        </div>
+                      )}
                     </div>
-                    {loadingUploadRequests[course.id] ? (
-                      <p className="text-sm text-gray-500">Loading requests...</p>
-                    ) : (uploadRequests[course.id] || []).length === 0 ? (
-                      <p className="text-sm text-gray-500">
-                        No upload requests yet. Student submissions will appear here.
-                      </p>
-                    ) : (
-                      <div className="space-y-3">
-                        {(uploadRequests[course.id] || []).map((request) => (
-                          <div key={request.id} className="border border-gray-200 rounded-lg p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate" title={request.original_name}>
-                                  {request.original_name}
-                                </p>
-                                <p className="text-xs text-gray-500 truncate" title={request.student_email || 'Student'}>
-                                  {request.student_email || 'Student'} • {request.file_type}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => handleApproveUpload(course.id, request.id)}
-                                  className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  onClick={() => handleRejectUpload(course.id, request.id)}
-                                  className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                                >
-                                  Reject
-                                </button>
-                              </div>
-                            </div>
-                            {request.created_at && (
-                              <p className="text-xs text-gray-400 mt-2">
-                                Requested {new Date(request.created_at).toLocaleString()}
-                              </p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+                    <span className="text-sm text-gray-600">
+                      {collapseLectures[course.id] ? '+' : '−'}
+                    </span>
+                  </button>
+                  {!collapseLectures[course.id] && (
+                    <div className="px-6 pb-6">
+                      {user?.role === 'instructor' ? (
+                        <FileUpload
+                          courseId={course.id}
+                          onUploadSuccess={handleUploadSuccess}
+                          mode="direct"
+                        />
+                      ) : (
+                        <FileUpload
+                          courseId={course.id}
+                          onUploadSuccess={handleUploadSuccess}
+                          mode="request"
+                        />
+                      )}
+                      <div className="mt-4 space-y-6">
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-900 mb-2">Instructor uploaded materials</h4>
+                          {instructorLectures.length === 0 ? (
+                            <p className="text-sm text-gray-500">No instructor uploads yet.</p>
+                          ) : (
+                            <LectureList
+                              lectures={visibleInstructorLectures}
+                              onDelete={user?.role === 'instructor' ? handleDelete : undefined}
+                              activityByLectureId={lectureQuestionsById}
+                              avgQuestions={avgQuestions}
+                            />
+                          )}
+                          {instructorLectures.length > 4 && (
+                            <button
+                              onClick={() =>
+                                setShowAllInstructorLectures({
+                                  ...showAllInstructorLectures,
+                                  [course.id]: !showAllInstructor,
+                                })
+                              }
+                              className="mt-3 text-sm text-gray-600 hover:text-gray-800"
+                            >
+                              {showAllInstructor
+                                ? 'Show less'
+                                : `Show more (+${instructorLectures.length - visibleInstructorLectures.length})`}
+                            </button>
+                          )}
+                        </div>
 
-            {user?.role === 'student' && (
-              <div className={`rounded-xl shadow-sm border ${collapseUploadRequests[course.id] ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}`}>
-                <button
-                  onClick={() =>
-                    setCollapseUploadRequests({
-                      ...collapseUploadRequests,
-                      [course.id]: !collapseUploadRequests[course.id],
-                    })
-                  }
-                  className="w-full px-6 py-4 flex items-center justify-between text-left"
-                >
-                  <h3 className="text-base font-semibold text-gray-900">My Upload Requests</h3>
-                  <span className="text-sm text-gray-600">
-                    {collapseUploadRequests[course.id] ? '+' : '−'}
-                  </span>
-                </button>
-                {!collapseUploadRequests[course.id] && (
-                  <div className="px-6 pb-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div />
-                      <button
-                        onClick={() => loadMyUploadRequests(course.id)}
-                        className="text-sm text-gray-500 hover:text-gray-700"
-                      >
-                        Refresh
-                      </button>
+                        <div className="pt-4 border-t border-gray-200">
+                          <h4 className="text-sm font-semibold text-gray-900 mb-2">Student uploaded materials</h4>
+                          {studentLectures.length === 0 ? (
+                            <p className="text-sm text-gray-500">No student uploads yet.</p>
+                          ) : (
+                            <LectureList
+                              lectures={visibleStudentLectures}
+                              onDelete={user?.role === 'instructor' ? handleDelete : undefined}
+                              activityByLectureId={lectureQuestionsById}
+                              avgQuestions={avgQuestions}
+                            />
+                          )}
+                          {studentLectures.length > 4 && (
+                            <button
+                              onClick={() =>
+                                setShowAllStudentLectures({
+                                  ...showAllStudentLectures,
+                                  [course.id]: !showAllStudents,
+                                })
+                              }
+                              className="mt-3 text-sm text-gray-600 hover:text-gray-800"
+                            >
+                              {showAllStudents
+                                ? 'Show less'
+                                : `Show more (+${studentLectures.length - visibleStudentLectures.length})`}
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    {loadingMyUploadRequests[course.id] ? (
-                      <p className="text-sm text-gray-500">Loading requests...</p>
-                    ) : (myUploadRequests[course.id] || []).length === 0 ? (
-                      <p className="text-sm text-gray-500">
-                        No upload requests yet. Submitted files will show here.
-                      </p>
-                    ) : (
-                      <div className="space-y-3">
-                        {(myUploadRequests[course.id] || []).map((request) => (
-                          <div key={request.id} className="border border-gray-200 rounded-lg p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate" title={request.original_name}>
-                                  {request.original_name}
-                                </p>
-                                <p className="text-xs text-gray-500 truncate">{request.file_type}</p>
-                              </div>
-                              <span
-                                className={`text-xs px-2 py-0.5 rounded-full ${
-                                  request.status === 'pending'
-                                    ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
-                                    : request.status === 'approved'
-                                    ? 'bg-green-50 text-green-700 border border-green-200'
-                                    : 'bg-red-50 text-red-700 border border-red-200'
-                                }`}
-                              >
-                                {request.status}
-                              </span>
-                            </div>
-                            {request.created_at && (
-                              <p className="text-xs text-gray-400 mt-2">
-                                Submitted {new Date(request.created_at).toLocaleString()}
-                              </p>
-                            )}
-                          </div>
-                        ))}
+                  )}
+                </div>
+              )}
+
+              {user?.role === 'instructor' && showManageStudentsSection && (
+                <div className={`rounded-xl shadow-sm border ${collapseManageStudents[course.id] ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}`}>
+                  <button
+                    onClick={async () => {
+                      const nextCollapsed = !collapseManageStudents[course.id];
+                      setCollapseManageStudents({ ...collapseManageStudents, [course.id]: nextCollapsed });
+                      if (!nextCollapsed) {
+                        await loadCourseStudents(course.id);
+                        await loadSections(course.id);
+                        await loadAnnouncements(course.id);
+                        await loadUploadRequests(course.id);
+                        const sectionId = selectedSectionId[course.id];
+                        if (sectionId) {
+                          await loadGroups(course.id, sectionId);
+                        }
+                      }
+                    }}
+                    className="w-full px-6 py-4 flex items-center justify-between text-left"
+                  >
+                    <span className="text-base font-semibold text-gray-900">Manage Students</span>
+                    <span className="text-sm text-gray-600">
+                      {collapseManageStudents[course.id] ? '+' : '−'}
+                    </span>
+                  </button>
+                  {!collapseManageStudents[course.id] && (
+                    <div className="px-6 pb-6">
+                      {renderStudentManagement(course.id)}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(user?.role === 'instructor' || canReviewUploads[course.id]) && showUploads && (
+                <div className={`rounded-xl shadow-sm border ${collapseUploadRequests[course.id] ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}`}>
+                  <button
+                    onClick={() =>
+                      setCollapseUploadRequests({
+                        ...collapseUploadRequests,
+                        [course.id]: !collapseUploadRequests[course.id],
+                      })
+                    }
+                    className="w-full px-6 py-4 flex items-center justify-between text-left"
+                  >
+                    <h3 className="text-base font-semibold text-gray-900">Upload Requests</h3>
+                    <span className="text-sm text-gray-600">
+                      {collapseUploadRequests[course.id] ? '+' : '−'}
+                    </span>
+                  </button>
+                  {!collapseUploadRequests[course.id] && (
+                    <div className="px-6 pb-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <div />
+                        <button
+                          onClick={() => loadUploadRequests(course.id)}
+                          className="text-sm text-gray-500 hover:text-gray-700"
+                        >
+                          Refresh
+                        </button>
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+                      {loadingUploadRequests[course.id] ? (
+                        <p className="text-sm text-gray-500">Loading requests...</p>
+                      ) : (uploadRequests[course.id] || []).length === 0 ? (
+                        <p className="text-sm text-gray-500">
+                          No upload requests yet. Student submissions will appear here.
+                        </p>
+                      ) : (
+                        <div className="space-y-3">
+                          {(uploadRequests[course.id] || []).map((request) => (
+                            <div key={request.id} className="border border-gray-200 rounded-lg p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-gray-900 truncate" title={request.original_name}>
+                                    {request.original_name}
+                                  </p>
+                                  <p className="text-xs text-gray-500 truncate" title={request.student_email || 'Student'}>
+                                    {request.student_email || 'Student'} • {request.file_type}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => handleApproveUpload(course.id, request.id)}
+                                    className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    onClick={() => handleRejectUpload(course.id, request.id)}
+                                    className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                                  >
+                                    Reject
+                                  </button>
+                                </div>
+                              </div>
+                              {request.created_at && (
+                                <p className="text-xs text-gray-400 mt-2">
+                                  Requested {new Date(request.created_at).toLocaleString()}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
-            
-          </div>
+              {user?.role === 'student' && showUploads && (
+                <div className={`rounded-xl shadow-sm border ${collapseUploadRequests[course.id] ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}`}>
+                  <button
+                    onClick={() =>
+                      setCollapseUploadRequests({
+                        ...collapseUploadRequests,
+                        [course.id]: !collapseUploadRequests[course.id],
+                      })
+                    }
+                    className="w-full px-6 py-4 flex items-center justify-between text-left"
+                  >
+                    <h3 className="text-base font-semibold text-gray-900">My Upload Requests</h3>
+                    <span className="text-sm text-gray-600">
+                      {collapseUploadRequests[course.id] ? '+' : '−'}
+                    </span>
+                  </button>
+                  {!collapseUploadRequests[course.id] && (
+                    <div className="px-6 pb-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <div />
+                        <button
+                          onClick={() => loadMyUploadRequests(course.id)}
+                          className="text-sm text-gray-500 hover:text-gray-700"
+                        >
+                          Refresh
+                        </button>
+                      </div>
+                      {loadingMyUploadRequests[course.id] ? (
+                        <p className="text-sm text-gray-500">Loading requests...</p>
+                      ) : (myUploadRequests[course.id] || []).length === 0 ? (
+                        <p className="text-sm text-gray-500">
+                          No upload requests yet. Submitted files will show here.
+                        </p>
+                      ) : (
+                        <div className="space-y-3">
+                          {(myUploadRequests[course.id] || []).map((request) => (
+                            <div key={request.id} className="border border-gray-200 rounded-lg p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-gray-900 truncate" title={request.original_name}>
+                                    {request.original_name}
+                                  </p>
+                                  <p className="text-xs text-gray-500 truncate">{request.file_type}</p>
+                                </div>
+                                <span
+                                  className={`text-xs px-2 py-0.5 rounded-full ${
+                                    request.status === 'pending'
+                                      ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+                                      : request.status === 'approved'
+                                      ? 'bg-green-50 text-green-700 border border-green-200'
+                                      : 'bg-red-50 text-red-700 border border-red-200'
+                                  }`}
+                                >
+                                  {request.status}
+                                </span>
+                              </div>
+                              {request.created_at && (
+                                <p className="text-xs text-gray-400 mt-2">
+                                  Submitted {new Date(request.created_at).toLocaleString()}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
-          {/* Main Content - Chat or Analytics */}
-          <div className="lg:col-span-2 space-y-8">
-            {user?.role === 'instructor' ? (
-              <div className="text-sm text-gray-500">
-                Analytics summary shown above.
-              </div>
-            ) : (
-              <div className="space-y-6">
+              {user?.role === 'student' && showAnnouncements && (
                 <div className={`rounded-xl shadow-sm border ${collapseStudentAnnouncements[course.id] ? 'bg-blue-50 border-blue-100' : 'bg-blue-50 border-blue-100'}`}>
                   <button
                     onClick={() =>
@@ -1596,7 +1989,9 @@ export default function CourseDetailPage() {
                     </div>
                   )}
                 </div>
+              )}
 
+              {user?.role === 'student' && showQuestions && (
                 <div className={`rounded-xl shadow-sm border ${collapseAskQuestions[course.id] ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}`}>
                   <button
                     onClick={() =>
@@ -1655,86 +2050,83 @@ export default function CourseDetailPage() {
                     </div>
                   )}
                 </div>
-              </div>
-            )}
-          </div>
-        </div>
+              )}
 
-        {/* Zone 3: Communication & exports */}
-        {user?.role === 'instructor' && (
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Communication & Data</h3>
-            <div className={`rounded-xl shadow-sm border ${collapseInstructorAnnouncements[course.id] ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}`}>
-              <button
-                onClick={() =>
-                  setCollapseInstructorAnnouncements({
-                    ...collapseInstructorAnnouncements,
-                    [course.id]: !collapseInstructorAnnouncements[course.id],
-                  })
-                }
-                className="w-full px-6 py-4 flex items-center justify-between text-left"
-              >
-                <h4 className="text-base font-semibold text-gray-900">Announcements</h4>
-                <span className="text-sm text-gray-600">
-                  {collapseInstructorAnnouncements[course.id] ? '+' : '−'}
-                </span>
-              </button>
-              {!collapseInstructorAnnouncements[course.id] && (
-                <div className="px-6 pb-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <div />
-                    <button
-                      onClick={() => handleExportQuestions(course.id)}
-                      className="text-sm text-gray-500 hover:text-gray-700"
-                    >
-                      Export Questions CSV
-                    </button>
-                  </div>
-                  <p className="text-sm text-gray-500 mb-3">
-                    Use announcements to clarify confusing topics or post updates.
-                  </p>
-                  <div className="space-y-3">
-                    <textarea
-                      value={newAnnouncement[course.id] || ''}
-                      onChange={(e) => setNewAnnouncement({ ...newAnnouncement, [course.id]: e.target.value })}
-                      placeholder="Post an announcement to this course..."
-                      rows={3}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
-                    />
-                    <div className="flex items-center justify-between">
-                      {announcementError[course.id] && (
-                        <p className="text-xs text-red-600">{announcementError[course.id]}</p>
-                      )}
-                      <button
-                        onClick={() => handlePostAnnouncement(course.id)}
-                        disabled={postingAnnouncement[course.id]}
-                        className="ml-auto px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-                      >
-                        {postingAnnouncement[course.id] ? 'Posting...' : 'Post'}
-                      </button>
+              {user?.role === 'instructor' && showAnnouncements && (
+                <div className={`rounded-xl shadow-sm border ${collapseInstructorAnnouncements[course.id] ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}`}>
+                  <button
+                    onClick={() =>
+                      setCollapseInstructorAnnouncements({
+                        ...collapseInstructorAnnouncements,
+                        [course.id]: !collapseInstructorAnnouncements[course.id],
+                      })
+                    }
+                    className="w-full px-6 py-4 flex items-center justify-between text-left"
+                  >
+                    <h4 className="text-base font-semibold text-gray-900">Announcements</h4>
+                    <span className="text-sm text-gray-600">
+                      {collapseInstructorAnnouncements[course.id] ? '+' : '−'}
+                    </span>
+                  </button>
+                  {!collapseInstructorAnnouncements[course.id] && (
+                    <div className="px-6 pb-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <div />
+                        <button
+                          onClick={() => handleExportQuestions(course.id)}
+                          className="text-sm text-gray-500 hover:text-gray-700"
+                        >
+                          Export Questions CSV
+                        </button>
+                      </div>
+                      <p className="text-sm text-gray-500 mb-3">
+                        Use announcements to clarify confusing topics or post updates.
+                      </p>
+                      <div className="space-y-3">
+                        <textarea
+                          value={newAnnouncement[course.id] || ''}
+                          onChange={(e) => setNewAnnouncement({ ...newAnnouncement, [course.id]: e.target.value })}
+                          placeholder="Post an announcement to this course..."
+                          rows={3}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
+                        />
+                        <div className="flex items-center justify-between">
+                          {announcementError[course.id] && (
+                            <p className="text-xs text-red-600">{announcementError[course.id]}</p>
+                          )}
+                          <button
+                            onClick={() => handlePostAnnouncement(course.id)}
+                            disabled={postingAnnouncement[course.id]}
+                            className="ml-auto px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                          >
+                            {postingAnnouncement[course.id] ? 'Posting...' : 'Post'}
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {(announcements[course.id] || []).length === 0 ? (
+                            <p className="text-sm text-gray-500">No announcements yet.</p>
+                          ) : (
+                            (announcements[course.id] || []).map((item) => (
+                              <div key={item.id} className="border border-gray-200 rounded-lg p-3">
+                                <p className="text-sm text-gray-800 whitespace-pre-wrap">{item.message}</p>
+                                {item.created_at && (
+                                  <p className="text-xs text-gray-400 mt-2">
+                                    {new Date(item.created_at).toLocaleString()}
+                                  </p>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      {(announcements[course.id] || []).length === 0 ? (
-                        <p className="text-sm text-gray-500">No announcements yet.</p>
-                      ) : (
-                        (announcements[course.id] || []).map((item) => (
-                          <div key={item.id} className="border border-gray-200 rounded-lg p-3">
-                            <p className="text-sm text-gray-800 whitespace-pre-wrap">{item.message}</p>
-                            {item.created_at && (
-                              <p className="text-xs text-gray-400 mt-2">
-                                {new Date(item.created_at).toLocaleString()}
-                              </p>
-                            )}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
           </div>
-        )}
+        </div>
+
       </main>
     </div>
   );

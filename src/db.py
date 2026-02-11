@@ -377,6 +377,21 @@ def init_schema():
             );
         """)
 
+        # Create lecture resources table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS lecture_resources (
+                id SERIAL PRIMARY KEY,
+                lecture_id INT NOT NULL REFERENCES lectures(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                url TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS lecture_resources_lecture_id_idx
+            ON lecture_resources (lecture_id);
+        """)
+
         # Ensure new columns/indexes exist on chunks
         cur.execute("""
             DO $$
@@ -666,11 +681,34 @@ def init_schema():
                 ADD COLUMN user_id INT REFERENCES users(id) ON DELETE SET NULL;
             """)
             print("[INFO] Added user_id column to query_history table")
+
+        # Add page_number column if it doesn't exist
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = 'query_history'
+                AND column_name = 'page_number'
+            );
+        """)
+        has_page_number = cur.fetchone()[0]
+        if not has_page_number:
+            cur.execute("""
+                ALTER TABLE query_history
+                ADD COLUMN page_number INT;
+            """)
+            print("[INFO] Added page_number column to query_history table")
         
         # Create index on user_id for filtering
         cur.execute("""
             CREATE INDEX IF NOT EXISTS query_history_user_id_idx 
             ON query_history (user_id);
+        """)
+
+        # Create index on page_number for analytics
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS query_history_page_number_idx
+            ON query_history (page_number);
         """)
         
         conn.commit()
@@ -761,6 +799,88 @@ def update_lecture_status(lecture_id: int, status: str):
             """,
             (status, lecture_id),
         )
+        conn.commit()
+
+
+def update_lecture_name(lecture_id: int, name: str):
+    """Update lecture display name."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE lectures SET original_name = %s WHERE id = %s",
+            (name, lecture_id),
+        )
+        conn.commit()
+
+
+def update_lecture_file(
+    lecture_id: int,
+    original_name: str,
+    file_path: str,
+    page_count: int,
+    file_type: str = "pdf",
+):
+    """Update lecture file metadata."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE lectures
+            SET original_name = %s,
+                file_path = %s,
+                page_count = %s,
+                file_type = %s,
+                status = 'processing'
+            WHERE id = %s
+            """,
+            (original_name, file_path, page_count, file_type, lecture_id),
+        )
+        conn.commit()
+
+
+def reset_lecture_materials(lecture_id: int):
+    """Clear summary, key points, and transcript for a lecture."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE lectures SET summary = NULL, key_points = NULL, transcript = NULL WHERE id = %s",
+            (lecture_id,),
+        )
+        conn.commit()
+
+
+def list_lecture_resources(lecture_id: int):
+    """List lecture resources."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, lecture_id, title, url, created_at
+            FROM lecture_resources
+            WHERE lecture_id = %s
+            ORDER BY created_at DESC
+            """,
+            (lecture_id,),
+        )
+        return cur.fetchall()
+
+
+def add_lecture_resource(lecture_id: int, title: str, url: str):
+    """Add a lecture resource."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO lecture_resources (lecture_id, title, url)
+            VALUES (%s, %s, %s)
+            RETURNING id, lecture_id, title, url, created_at
+            """,
+            (lecture_id, title, url),
+        )
+        resource = cur.fetchone()
+        conn.commit()
+        return resource
+
+
+def delete_lecture_resource(resource_id: int):
+    """Delete a lecture resource."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM lecture_resources WHERE id = %s", (resource_id,))
         conn.commit()
 
 
@@ -1003,32 +1123,73 @@ def create_flashcard_set(
         return set_id
 
 
-def insert_flashcards(
-    flashcard_set_id: int,
-    lecture_id: int,
-    flashcards: List[Dict[str, Any]],
-):
-    """Insert flashcards for a set."""
+def insert_flashcards(flashcard_set_id: int, lecture_id: int, flashcards: List[Dict[str, Any]]):
     with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'flashcards'
+            """
+        )
+        columns = {row[0] for row in cur.fetchall()}
+        has_question = "question" in columns
+        has_answer = "answer" in columns
+        has_front = "front" in columns
+        has_back = "back" in columns
+        has_page_number = "page_number" in columns
+        has_source_keypoint_id = "source_keypoint_id" in columns
+        has_source_chunk_ids = "source_chunk_ids" in columns
+        has_quality_score = "quality_score" in columns
+
+        inserted = 0
         for card in flashcards:
-            cur.execute(
-                """
-                INSERT INTO flashcards (
-                    flashcard_set_id, lecture_id, question, answer,
-                    source_keypoint_id, source_chunk_ids, quality_score
+            front = (card.get("front") or card.get("question") or "").strip()
+            back = (card.get("back") or card.get("answer") or "").strip()
+
+            if not front or not back:
+                continue  # or raise ValueError("Flashcard missing front/back")
+
+            cols = ["flashcard_set_id", "lecture_id"]
+            vals: List[Any] = [flashcard_set_id, lecture_id]
+            if has_question:
+                cols.append("question")
+                vals.append(front)
+            if has_answer:
+                cols.append("answer")
+                vals.append(back)
+            if has_front:
+                cols.append("front")
+                vals.append(front)
+            if has_back:
+                cols.append("back")
+                vals.append(back)
+            if has_page_number:
+                cols.append("page_number")
+                vals.append(card.get("page_number"))
+            if has_source_keypoint_id:
+                cols.append("source_keypoint_id")
+                vals.append(card.get("source_keypoint_id"))
+            if has_source_chunk_ids:
+                cols.append("source_chunk_ids")
+                vals.append(
+                    json.dumps(card.get("source_chunk_ids")) if card.get("source_chunk_ids") else None
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            if has_quality_score:
+                cols.append("quality_score")
+                vals.append(card.get("quality_score"))
+
+            placeholders = ", ".join(["%s"] * len(cols))
+            cur.execute(
+                f"""
+                INSERT INTO flashcards ({', '.join(cols)})
+                VALUES ({placeholders})
                 """,
-                (
-                    flashcard_set_id,
-                    lecture_id,
-                    card.get("question"),
-                    card.get("answer"),
-                    card.get("source_keypoint_id"),
-                    json.dumps(card.get("source_chunk_ids")) if card.get("source_chunk_ids") else None,
-                    card.get("quality_score"),
-                ),
+                vals,
             )
+            inserted += 1
+        if inserted == 0:
+            raise ValueError("No valid flashcards to insert")
         conn.commit()
 
 
@@ -1060,12 +1221,43 @@ def get_flashcard_set_by_id(set_id: int) -> Optional[Tuple[int, int, str, Option
 def list_flashcards_by_set(set_id: int) -> List[Tuple[int, str, str, Optional[int], Optional[float]]]:
     """Get flashcards for a specific set. Returns (id, question, answer, source_keypoint_id, quality_score)."""
     with get_conn() as conn, conn.cursor() as cur:
-        cur.execute("""
-            SELECT id, question, answer, source_keypoint_id, quality_score
+        cur.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'flashcards'
+            """
+        )
+        columns = {row[0] for row in cur.fetchall()}
+        has_question = "question" in columns
+        has_answer = "answer" in columns
+        has_front = "front" in columns
+        has_back = "back" in columns
+        has_source_keypoint_id = "source_keypoint_id" in columns
+        has_quality_score = "quality_score" in columns
+
+        question_expr = (
+            "COALESCE(NULLIF(question, ''), front)"
+            if has_question and has_front
+            else ("question" if has_question else "front")
+        )
+        answer_expr = (
+            "COALESCE(NULLIF(answer, ''), back)"
+            if has_answer and has_back
+            else ("answer" if has_answer else "back")
+        )
+        source_expr = "source_keypoint_id" if has_source_keypoint_id else "NULL"
+        quality_expr = "quality_score" if has_quality_score else "NULL"
+
+        cur.execute(
+            f"""
+            SELECT id, {question_expr} as question, {answer_expr} as answer, {source_expr} as source_keypoint_id, {quality_expr} as quality_score
             FROM flashcards
             WHERE flashcard_set_id = %s
-            ORDER BY quality_score DESC NULLS LAST, id
-        """, (set_id,))
+            ORDER BY {quality_expr} DESC NULLS LAST, id
+            """,
+            (set_id,),
+        )
         return cur.fetchall()
 
 
@@ -1190,6 +1382,48 @@ def search_similar(
         cur.execute(base_query, tuple(params))
         return cur.fetchall()
 
+
+def search_by_keywords(
+    terms: List[str],
+    top_k: int = 5,
+    lecture_id: Optional[int] = None,
+    course_id: Optional[int] = None,
+) -> List[Tuple[str, Optional[int], int, str, str, Optional[float], Optional[float]]]:
+    """
+    Search for chunks by keyword match (ILIKE).
+    """
+    if not terms:
+        return []
+    init_schema()
+    with get_conn() as conn, conn.cursor() as cur:
+        base_query = """
+            SELECT
+                c.text,
+                c.page_number,
+                c.lecture_id,
+                l.original_name,
+                l.file_type,
+                c.timestamp_start,
+                c.timestamp_end
+            FROM chunks c
+            JOIN lectures l ON c.lecture_id = l.id
+        """
+        params: List[Any] = []
+        where: List[str] = []
+        if lecture_id is not None:
+            where.append("c.lecture_id = %s")
+            params.append(lecture_id)
+        elif course_id is not None:
+            where.append("l.course_id = %s")
+            params.append(course_id)
+        where.append("(" + " OR ".join(["c.text ILIKE %s"] * len(terms)) + ")")
+        params.extend([f"%{term}%" for term in terms])
+        base_query += " WHERE " + " AND ".join(where)
+        base_query += " LIMIT %s"
+        params.append(top_k)
+        cur.execute(base_query, tuple(params))
+        return cur.fetchall()
+
 # Legacy function for backward compatibility
 def search_similar_legacy(query_emb: List[float], top_k: int = 5):
     """Legacy function: search using old document_chunks schema."""
@@ -1213,16 +1447,17 @@ def insert_query(
     lecture_id: Optional[int] = None,
     course_id: Optional[int] = None,
     user_id: Optional[int] = None,
+    page_number: Optional[int] = None,
 ):
     """Store a question and its answer in the query_history table."""
     init_schema()
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO query_history (lecture_id, course_id, question, answer, user_id)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO query_history (lecture_id, course_id, question, answer, user_id, page_number)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
-            (lecture_id, course_id, question, answer, user_id),
+            (lecture_id, course_id, question, answer, user_id, page_number),
         )
         conn.commit()
 
@@ -1249,10 +1484,11 @@ def list_lectures(course_id: Optional[int] = None):
                    COALESCE(l.transcript IS NOT NULL, FALSE) AS has_transcript, l.created_by, u.role
             FROM lectures l
             LEFT JOIN users u ON u.id = l.created_by
+            WHERE l.status != 'archived'
         """
         params: List[Any] = []
         if course_id is not None:
-            base_query += " WHERE course_id = %s"
+            base_query += " AND course_id = %s"
             params.append(course_id)
 
         base_query += " ORDER BY created_at DESC"
