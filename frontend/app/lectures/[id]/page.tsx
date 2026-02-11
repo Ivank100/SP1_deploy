@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, Dispatch, SetStateAction } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, Dispatch, SetStateAction } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   apiClient,
@@ -417,6 +417,28 @@ export default function LecturePage() {
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
+
+  const peakConfusedPages = useMemo(() => {
+    if (!lecture || lecture.file_type !== 'pdf' || lecture.page_count <= 0) return null;
+    const pageQuestions = history.filter((item) => item.page_number != null);
+    if (pageQuestions.length === 0) return null;
+    const BIN_COUNT = 5;
+    const totalPages = lecture.page_count;
+    const binSize = Math.ceil(totalPages / BIN_COUNT);
+    const bins = Array.from({ length: BIN_COUNT }, (_, i) => {
+      const startPage = i * binSize + 1;
+      const endPage = Math.min((i + 1) * binSize, totalPages);
+      return { index: i, startPage, endPage, count: 0 };
+    });
+    for (const q of pageQuestions) {
+      const pageNumber = q.page_number ?? 1;
+      const binIndex = Math.min(Math.floor((pageNumber - 1) / binSize), BIN_COUNT - 1);
+      bins[binIndex].count += 1;
+    }
+    const peakValue = Math.max(...bins.map((bin) => bin.count));
+    const peakBin = bins.find((bin) => bin.count === peakValue && peakValue > 0);
+    return peakBin ? `Pages ${peakBin.startPage}-${peakBin.endPage}` : null;
+  }, [lecture, history]);
   const baseHistory =
     questionFilter === 'hidden'
       ? visibleHistory
@@ -530,11 +552,6 @@ export default function LecturePage() {
               </div>
             );
           })}
-        </div>
-        <div className="mt-4 text-xs text-gray-500">
-          Peak confusion: {bins.find((bin) => bin.count === peakValue && peakValue > 0)
-            ? formatRangeLabel(bins.find((bin) => bin.count === peakValue && peakValue > 0)!)
-            : 'N/A'}
         </div>
       </div>
     );
@@ -767,9 +784,9 @@ export default function LecturePage() {
                     </p>
                   </div>
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <p className="text-xs text-gray-500 mb-1">Peak Confusion Time (min)</p>
+                    <p className="text-xs text-gray-500 mb-1">Peak Confused Lecture Pages</p>
                     <p className="text-lg font-semibold text-gray-900">
-                      {lectureAnalytics?.peak_confusion_range || 'N/A'}
+                      {peakConfusedPages ?? lectureAnalytics?.peak_confusion_range ?? 'N/A'}
                     </p>
                   </div>
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
