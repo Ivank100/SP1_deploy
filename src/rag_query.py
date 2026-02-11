@@ -1,13 +1,27 @@
 # src/rag_query.py
 from typing import Optional, List, Dict
 from .deepseek_client import DeepSeekClient
-from .db import search_similar, insert_query
+from .db import search_similar, search_by_keywords, insert_query
 from .embedding_model import embed_texts
 from .citation_utils import format_citations
 
 SYSTEM_PROMPT = """You are a helpful assistant answering questions based only on the provided context from PDF lectures. 
 If the answer is not in the context, say you don't know.
 When referencing information, mention the page numbers, and if multiple lectures are involved, name the lecture alongside the page."""
+
+STOP_WORDS = {
+    "the", "a", "an", "is", "are", "to", "of", "in", "on", "for", "and", "or", "with",
+    "what", "why", "how", "when", "where", "who", "which", "can", "could", "should", "would",
+}
+
+def extract_keywords(question: str, limit: int = 6) -> List[str]:
+    tokens = [t.lower() for t in question.replace("?", " ").replace(".", " ").split()]
+    keywords = [t for t in tokens if t not in STOP_WORDS and len(t) > 3]
+    deduped = []
+    for token in keywords:
+        if token not in deduped:
+            deduped.append(token)
+    return deduped[:limit]
 
 def answer_question(
     question: str,
@@ -39,10 +53,19 @@ def answer_question(
         lecture_id=lecture_id,
         course_id=course_id,
     )
+    if not results:
+        keywords = extract_keywords(question)
+        if keywords:
+            results = search_by_keywords(
+                keywords,
+                top_k=top_k,
+                lecture_id=lecture_id,
+                course_id=course_id,
+            )
     
     if not results:
         answer = "I couldn't find any relevant information in the lecture materials."
-        insert_query(question, answer, lecture_id, course_id, user_id)
+        insert_query(question, answer, lecture_id, course_id, user_id, None)
         return answer, "", []
     
     # Extract chunks, metadata, and lecture references
@@ -78,7 +101,13 @@ def answer_question(
         answer_with_citation = answer
     
     # 6) store question and answer in database
-    insert_query(question, answer_with_citation, lecture_id, course_id, user_id)
+    page_number = None
+    for source in sources:
+        if source.get("page_number") is not None:
+            if lecture_id is None or source.get("lecture_id") == lecture_id:
+                page_number = source.get("page_number")
+                break
+    insert_query(question, answer_with_citation, lecture_id, course_id, user_id, page_number)
     
     return answer_with_citation, citation, sources
 

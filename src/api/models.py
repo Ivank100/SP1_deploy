@@ -25,6 +25,30 @@ class LectureListResponse(BaseModel):
     lectures: List[LectureResponse]
     total: int
 
+
+class LectureRenameRequest(BaseModel):
+    name: str
+
+
+class LectureResource(BaseModel):
+    id: int
+    lecture_id: int
+    title: str
+    url: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class LectureResourceCreateRequest(BaseModel):
+    title: str
+    url: str
+
+
+class LectureResourceListResponse(BaseModel):
+    resources: List[LectureResource]
+
 class CitationSource(BaseModel):
     """Structured citation metadata."""
     lecture_id: Optional[int]
@@ -64,6 +88,7 @@ class QueryHistoryItem(BaseModel):
     answer: str
     created_at: datetime
     user_email: Optional[str] = None
+    page_number: Optional[int] = None
     
     class Config:
         from_attributes = True

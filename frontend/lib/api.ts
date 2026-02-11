@@ -46,7 +46,7 @@ export interface Lecture {
   original_name: string;
   file_path: string;
   page_count: number;
-  status: 'processing' | 'completed' | 'failed' | 'transcribing';
+  status: 'processing' | 'completed' | 'failed' | 'transcribing' | 'archived';
   created_at: string;
   course_id?: number | null;
   file_type: FileType;
@@ -94,6 +94,7 @@ export interface QueryHistoryItem {
   answer: string;
   created_at: string;
   user_email?: string | null;
+  page_number?: number | null;
 }
 
 export interface QueryHistoryResponse {
@@ -119,6 +120,18 @@ export interface LectureAnalyticsResponse {
   bins: LectureAnalyticsBin[];
   course_question_total?: number | null;
   course_lecture_count?: number | null;
+}
+
+export interface LectureResource {
+  id: number;
+  lecture_id: number;
+  title: string;
+  url: string;
+  created_at: string;
+}
+
+export interface LectureResourceListResponse {
+  resources: LectureResource[];
 }
 
 export interface SummaryResponse {
@@ -270,7 +283,6 @@ export interface CreateCoursePayload {
   description?: string;
   term_year?: number;
   term_number?: number;
-  duration_minutes?: number;
 }
 
 export interface QueryCluster {
@@ -567,6 +579,40 @@ export const apiClient = {
 
   async deleteLecture(id: number): Promise<void> {
     await api.delete(`/api/lectures/${id}`);
+  },
+
+  async renameLecture(id: number, name: string): Promise<Lecture> {
+    const response = await api.patch<Lecture>(`/api/lectures/${id}/rename`, { name });
+    return response.data;
+  },
+
+  async replaceLectureFile(id: number, file: File): Promise<UploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post<UploadResponse>(`/api/lectures/${id}/replace`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  async archiveLecture(id: number): Promise<{ message: string }> {
+    const response = await api.patch(`/api/lectures/${id}/archive`);
+    return response.data;
+  },
+
+  async getLectureResources(lectureId: number): Promise<LectureResourceListResponse> {
+    const response = await api.get<LectureResourceListResponse>(`/api/lectures/${lectureId}/resources`);
+    return response.data;
+  },
+
+  async addLectureResource(lectureId: number, title: string, url: string): Promise<LectureResource> {
+    const response = await api.post<LectureResource>(`/api/lectures/${lectureId}/resources`, { title, url });
+    return response.data;
+  },
+
+  async deleteLectureResource(lectureId: number, resourceId: number): Promise<{ message: string }> {
+    const response = await api.delete(`/api/lectures/${lectureId}/resources/${resourceId}`);
+    return response.data;
   },
 
   // Queries

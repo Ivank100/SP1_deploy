@@ -18,7 +18,6 @@ export default function Home() {
   const [newCourseDescription, setNewCourseDescription] = useState('');
   const [newCourseTermYear, setNewCourseTermYear] = useState(new Date().getFullYear());
   const [newCourseTermNumber, setNewCourseTermNumber] = useState<1 | 2>(1);
-  const [newCourseDuration, setNewCourseDuration] = useState(90);
   const [courseFormError, setCourseFormError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [courseTab, setCourseTab] = useState<'classes' | 'hidden'>('classes');
@@ -141,11 +140,9 @@ export default function Home() {
         description: newCourseDescription.trim() || undefined,
         term_year: newCourseTermYear,
         term_number: newCourseTermNumber,
-        duration_minutes: newCourseDuration,
       });
       setNewCourseName('');
       setNewCourseDescription('');
-      setNewCourseDuration(90);
       setShowCreateModal(false);
       await loadCourses();
       router.push(`/courses/${newCourse.id}`);
@@ -658,7 +655,6 @@ export default function Home() {
                   setNewCourseDescription('');
                   setNewCourseTermYear(new Date().getFullYear());
                   setNewCourseTermNumber(1);
-                  setNewCourseDuration(90);
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -716,19 +712,6 @@ export default function Home() {
                     </select>
                   </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Class Duration</label>
-                  <select
-                    value={newCourseDuration}
-                    onChange={(e) => setNewCourseDuration(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  >
-                    <option value={60}>60 mins</option>
-                    <option value={90}>90 mins</option>
-                    <option value={120}>120 mins</option>
-                    <option value={180}>180 mins</option>
-                  </select>
-                </div>
                 {courseFormError && (
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
                     {courseFormError}
@@ -744,7 +727,6 @@ export default function Home() {
                     setNewCourseDescription('');
                     setNewCourseTermYear(new Date().getFullYear());
                     setNewCourseTermNumber(1);
-                    setNewCourseDuration(90);
                   }}
                   className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
                 >

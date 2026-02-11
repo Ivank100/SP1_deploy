@@ -69,8 +69,19 @@ def validate_flashcard(question: str, answer: str) -> Tuple[bool, Optional[str]]
     Validate a single flashcard candidate.
     Returns (is_valid, error_message).
     """
-    q_words = count_words(question)
-    a_words = count_words(answer)
+    q_text = (question or "").strip()
+    a_text = (answer or "").strip()
+    q_words = count_words(q_text)
+    a_words = count_words(a_text)
+    if q_words < 2 or a_words < 1:
+        return False, "Question/answer too short"
+    if not re.search(r"[a-zA-Z0-9]", q_text) or not re.search(r"[a-zA-Z0-9]", a_text):
+        return False, "Question/answer missing content"
+    q_clean = re.sub(r'[^a-z0-9_]+', '', q_text.lower())
+    a_clean = re.sub(r'[^a-z0-9_]+', '', a_text.lower())
+    banned_literals = {"question", "answer", "keypoint_index", "keypointindex"}
+    if q_clean in banned_literals or a_clean in banned_literals:
+        return False, "Question/answer contains placeholder key"
     
     if q_words > MAX_QUESTION_WORDS:
         return False, f"Question has {q_words} words (max {MAX_QUESTION_WORDS})"
@@ -85,9 +96,12 @@ def validate_flashcard(question: str, answer: str) -> Tuple[bool, Optional[str]]
         return False, "Answer is too vague"
     
     # Check for generic prompts
-    question_lower = question.lower().strip()
+    question_lower = q_text.lower().strip()
     if question_lower.startswith(('what do you think', 'in your opinion')):
         return False, "Question is too generic/opinion-based"
+    
+    if question_lower.startswith(('{', '[')) or answer.lower().strip().startswith(('{', '[')):
+        return False, "Question/answer appears to be JSON"
     
     return True, None
 
@@ -595,6 +609,38 @@ def generate_flashcards_v2(
         except Exception as e:
             # If fill fails, just return what we have
             pass
+    
+    # 8. Deterministic fallback from key points (guarantee minimum coverage)
+    if len(selected) < FINAL_COUNT:
+        remaining = FINAL_COUNT - len(selected)
+        normalized_existing = {normalize_text(q) for q in existing_questions}
+        normalized_existing.update(normalize_text(c.get("question", "")) for c in selected)
+        for idx, key_point in enumerate(key_points):
+            if remaining <= 0:
+                break
+            kp_text = (key_point or "").strip().rstrip(".")
+            if not kp_text:
+                continue
+            lower_kp = kp_text.lower()
+            if lower_kp.startswith(("how", "what", "why", "when", "where", "who", "which")):
+                question = kp_text if kp_text.endswith("?") else f"{kp_text}?"
+            else:
+                question = f"What is {kp_text}?"
+            answer = kp_text
+            if normalize_text(question) in normalized_existing:
+                continue
+            is_valid, _ = validate_flashcard(question, answer)
+            if not is_valid:
+                continue
+            candidate = {
+                "question": question,
+                "answer": answer,
+                "keypoint_index": idx + 1,
+                "quality_score": compute_quality_score(question, answer, kp_text),
+            }
+            selected.append(candidate)
+            normalized_existing.add(normalize_text(question))
+            remaining -= 1
     
     # Ensure we return exactly FINAL_COUNT (or as many as possible)
     final = selected[:FINAL_COUNT]
