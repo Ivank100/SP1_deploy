@@ -371,14 +371,6 @@ export default function Home() {
               <h1 className="text-2xl font-bold text-gray-900">LectureSense</h1>
             </div>
             <nav className="flex items-center space-x-4">
-              {user?.role === 'instructor' && (
-                <Link
-                  href="/instructor"
-                  className="text-sm font-medium text-gray-700 hover:text-primary-600"
-                >
-                  Analytics
-                </Link>
-              )}
               {user && (
                 <div className="flex items-center space-x-3 border-l border-gray-300 pl-4">
                   <div className="flex flex-col items-end">

@@ -43,6 +43,21 @@ def _format_timecode(seconds: float) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
+def _is_valid_keypoint(text: str) -> bool:
+    """Filter out JSON/code artifacts and other junk from key points."""
+    t = (text or "").strip()
+    if not t or len(t) < 2:
+        return False
+    junk = {"[", "]", "{", "}", "```", "```json", "json"}
+    if t in junk or t.rstrip(",") in junk:
+        return False
+    if t.startswith("```") or t.startswith("{"):
+        return False
+    if re.match(r"^[\s\[\]\{\}\"\'\,\.\:\;\!\?\-]+$", t):
+        return False
+    return True
+
+
 def _chunk_reference(page: Optional[int], ts_start: Optional[float], ts_end: Optional[float]) -> str:
     if page is not None:
         return f"[Page {page}]"
@@ -118,9 +133,11 @@ def get_materials(lecture_id: int) -> Dict[str, Any]:
                         "page_number": row[3] if len(row) > 3 else None,
                     })
     
+    raw_points = materials.get("key_points") or []
+    key_points = [p for p in raw_points if isinstance(p, str) and _is_valid_keypoint(p)]
     return {
         "summary": materials["summary"],
-        "key_points": materials["key_points"],
+        "key_points": key_points,
         "flashcards": flashcards,
     }
 
@@ -172,16 +189,25 @@ def generate_key_points(lecture_id: int) -> List[str]:
         },
     ]
     response = client.chat(messages, max_tokens=303, temperature=0.3).strip()
+    # Strip markdown code fences (```json, ```) that some models add
+    response = re.sub(r"^```(?:json)?\s*", "", response)
+    response = re.sub(r"\s*```\s*$", "", response).strip()
+
     key_points: List[str]
     try:
         parsed = json.loads(response)
         if isinstance(parsed, list):
-            key_points = [str(item).strip() for item in parsed][:5]
+            key_points = [str(item).strip() for item in parsed if _is_valid_keypoint(str(item))]
+            key_points = key_points[:8]
         else:
             raise ValueError
     except (json.JSONDecodeError, ValueError):
-        key_points = [line.strip("-• ") for line in response.splitlines() if line.strip()]
-        key_points = key_points[:5]
+        key_points = [
+            line.strip("-• ").strip("[],")
+            for line in response.splitlines()
+            if line.strip() and _is_valid_keypoint(line.strip("-• "))
+        ]
+        key_points = key_points[:8]
     if key_points:
         cleaned_points = []
         for point in key_points:
@@ -191,7 +217,7 @@ def generate_key_points(lecture_id: int) -> List[str]:
             words = cleaned.split()
             if len(words) > 8:
                 cleaned = " ".join(words[:8])
-            if cleaned:
+            if cleaned and _is_valid_keypoint(cleaned):
                 cleaned_points.append(cleaned)
         key_points = cleaned_points[:8]
     if not key_points:
