@@ -70,7 +70,7 @@ export default function FileUpload({ courseId, onUploadSuccess, mode = 'direct' 
       <label
         htmlFor="file-upload"
         className={`
-          flex items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer
+          flex items-center justify-center w-full h-40 border-2 border-dashed rounded-lg cursor-pointer
           transition-colors duration-200
           ${(uploading || !courseId) 
             ? 'border-gray-300 bg-gray-50 cursor-not-allowed' 
@@ -85,16 +85,16 @@ export default function FileUpload({ courseId, onUploadSuccess, mode = 'direct' 
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-              <p className="text-sm text-gray-600">
+              <p className="text-base text-gray-600">
                 {mode === 'request' ? 'Submitting for approval...' : 'Uploading and processing...'}
               </p>
             </>
           ) : (
             <>
-              <svg className="w-8 h-8 mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-10 h-10 mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
-              <p className="mb-2 text-sm text-gray-500">
+              <p className="mb-2 text-base text-gray-500">
                 {courseId ? (
                   <>
                     <span className="font-semibold">
@@ -106,7 +106,7 @@ export default function FileUpload({ courseId, onUploadSuccess, mode = 'direct' 
                   'Select a course to enable uploads'
                 )}
               </p>
-              <p className="text-xs text-gray-500">
+              <p className="text-sm text-gray-500">
                 {mode === 'request'
                   ? 'PDF, audio, or slides (pending approval)'
                   : 'PDF, audio, or slides (MAX. 50MB)'}
@@ -116,7 +116,7 @@ export default function FileUpload({ courseId, onUploadSuccess, mode = 'direct' 
         </div>
       </label>
       {error && (
-        <div className="mt-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2">
+        <div className="mt-2 text-base text-red-600 bg-red-50 border border-red-200 rounded p-2">
           {error}
         </div>
       )}

@@ -329,10 +329,10 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-6">Course Analytics Overview</h3>
+      <h3 className="text-xl font-semibold text-gray-900 mb-6">Course Analytics Overview</h3>
       
       <div className="mb-6">
-        <p className="text-sm text-gray-600 mb-4">How are students interacting with this course?</p>
+        <p className="text-base text-gray-600 mb-4">How are students interacting with this course?</p>
         
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -345,14 +345,14 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
                 await loadQuestionDetails();
               }
             }}
-            className="bg-gray-50 rounded-lg p-4 border border-gray-200 text-left hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="bg-gray-50 rounded-lg p-5 border border-gray-200 text-left hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
-            <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+            <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <span>💬</span>
               <span>Total Questions</span>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{analytics.total_questions}</p>
-            <p className="mt-1 text-xs text-gray-400">Tap to view</p>
+            <p className="text-3xl font-bold text-gray-900">{analytics.total_questions}</p>
+            <p className="mt-1 text-sm text-gray-400">Tap to view</p>
           </button>
           <button
             type="button"
@@ -363,14 +363,14 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
                 await loadStudentDetails();
               }
             }}
-            className="bg-gray-50 rounded-lg p-4 border border-gray-200 text-left hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="bg-gray-50 rounded-lg p-5 border border-gray-200 text-left hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
-            <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+            <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <span>👥</span>
               <span>Active Students</span>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{analytics.active_students}</p>
-            <p className="mt-1 text-xs text-gray-400">Tap to view</p>
+            <p className="text-3xl font-bold text-gray-900">{analytics.active_students}</p>
+            <p className="mt-1 text-sm text-gray-400">Tap to view</p>
           </button>
           <button
             type="button"
@@ -381,23 +381,23 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
                 await loadConfusedLectureDetails();
               }
             }}
-            className="bg-gray-50 rounded-lg p-4 border border-gray-200 text-left hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="bg-gray-50 rounded-lg p-5 border border-gray-200 text-left hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
-            <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+            <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <span>🧠</span>
               <span>Top Confused Lecture</span>
             </div>
-            <p className="text-sm font-semibold text-gray-900 line-clamp-2">
+            <p className="text-base font-semibold text-gray-900 line-clamp-2">
               {topConfusedLecture || 'No data yet'}
             </p>
-            <p className="mt-1 text-xs text-gray-400">Tap to view</p>
+            <p className="mt-1 text-sm text-gray-400">Tap to view</p>
           </button>
-          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-            <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+          <div className="bg-gray-50 rounded-lg p-5 border border-gray-200">
+            <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
               <span>📈</span>
               <span>Trend (Last 7 days)</span>
             </div>
-            <div className="flex items-center">
+            <div className="flex items-center text-base">
               {analytics.trend_direction === 'up' ? (
                 <span className="text-red-600 font-semibold">↑ +{analytics.trend_percentage}%</span>
               ) : analytics.trend_direction === 'down' ? (
@@ -412,30 +412,30 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
         {showQuestionDetails && (
           <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="font-semibold text-gray-900">All Questions</h4>
-              <span className="text-xs text-gray-500">
+              <h4 className="text-base font-semibold text-gray-900">All Questions</h4>
+              <span className="text-sm text-gray-500">
                 {courseQueryTotal ?? courseQueries.length} total
               </span>
             </div>
             {loadingQuestionDetails ? (
-              <p className="text-sm text-gray-500">Loading questions...</p>
+              <p className="text-base text-gray-500">Loading questions...</p>
             ) : courseQueries.length === 0 ? (
-              <p className="text-sm text-gray-500">
+              <p className="text-base text-gray-500">
                 No questions found. Ask a course question to populate this list.
               </p>
             ) : (
               <div className="max-h-80 overflow-y-auto space-y-3">
                 {courseQueries.map((item) => (
                   <div key={item.id} className="border border-gray-100 rounded-md p-3 bg-gray-50">
-                    <p className="text-sm text-gray-900">{item.question}</p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-base text-gray-900">{item.question}</p>
+                    <p className="text-sm text-gray-500 mt-1">
                       {item.user_email || 'Anonymous'} • {item.lecture_name || 'Course'}{' '}
                       {item.created_at && `• ${new Date(item.created_at).toLocaleString()}`}
                     </p>
                   </div>
                 ))}
                 {courseQueryTotal && courseQueryTotal > courseQueries.length && (
-                  <p className="text-xs text-gray-500">
+                  <p className="text-sm text-gray-500">
                     Showing latest {courseQueries.length} of {courseQueryTotal} questions.
                   </p>
                 )}
@@ -447,19 +447,19 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
         {showStudentDetails && (
           <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="font-semibold text-gray-900">Active Students</h4>
-              <span className="text-xs text-gray-500">{sortedStudents.length} listed</span>
+              <h4 className="text-base font-semibold text-gray-900">Active Students</h4>
+              <span className="text-sm text-gray-500">{sortedStudents.length} listed</span>
             </div>
             {loadingStudentDetails ? (
-              <p className="text-sm text-gray-500">Loading students...</p>
+              <p className="text-base text-gray-500">Loading students...</p>
             ) : sortedStudents.length === 0 ? (
-              <p className="text-sm text-gray-500">
+              <p className="text-base text-gray-500">
                 No students found yet. Add students to view their activity.
               </p>
             ) : (
               <div className="max-h-64 overflow-y-auto space-y-2">
                 {sortedStudents.map((student) => (
-                  <div key={student.student_id} className="flex items-center justify-between text-sm">
+                  <div key={student.student_id} className="flex items-center justify-between text-base">
                     <span className="text-gray-800">{student.student_email}</span>
                     <span className="text-gray-500">
                       {student.questions_count} q{student.questions_count === 1 ? '' : 's'}
@@ -474,19 +474,19 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
         {showConfusedLectures && (
           <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="font-semibold text-gray-900">Top Confused Lectures</h4>
-              <span className="text-xs text-gray-500">{sortedConfusedLectures.length} listed</span>
+              <h4 className="text-base font-semibold text-gray-900">Top Confused Lectures</h4>
+              <span className="text-sm text-gray-500">{sortedConfusedLectures.length} listed</span>
             </div>
             {loadingConfusedLectureDetails ? (
-              <p className="text-sm text-gray-500">Loading lecture analytics...</p>
+              <p className="text-base text-gray-500">Loading lecture analytics...</p>
             ) : sortedConfusedLectures.length === 0 ? (
-              <p className="text-sm text-gray-500">
+              <p className="text-base text-gray-500">
                 No lecture analytics yet. Upload lectures or ask questions to generate data.
               </p>
             ) : (
               <div className="space-y-2">
                 {sortedConfusedLectures.map((lecture, index) => (
-                  <div key={lecture.lecture_id} className="flex items-center justify-between text-sm">
+                  <div key={lecture.lecture_id} className="flex items-center justify-between text-base">
                     <span className="text-gray-800">
                       {index + 1}. {lecture.lecture_name || 'Lecture'}
                     </span>
@@ -502,8 +502,8 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
 
         {/* Course Overview Summary */}
         <div className="bg-primary-50 border border-primary-200 rounded-lg p-4 mb-6">
-          <h4 className="font-semibold text-gray-900 mb-2">Course Overview</h4>
-          <ul className="text-sm text-gray-700 space-y-1">
+          <h4 className="text-base font-semibold text-gray-900 mb-2">Course Overview</h4>
+          <ul className="text-base text-gray-700 space-y-1">
             <li>• {analytics.total_questions} questions asked</li>
             <li>• {recurringTopics.length} recurring topics</li>
             {analytics.trend_direction === 'up' && (
@@ -517,31 +517,31 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
 
         {/* Confusion Topics */}
         <div>
-          <h4 className="font-semibold text-gray-900 mb-3">Confusion Topics</h4>
+          <h4 className="text-base font-semibold text-gray-900 mb-3">Confusion Topics</h4>
           {ignoredCount > 0 && (
-            <p className="text-xs text-gray-500 mb-3">
+            <p className="text-sm text-gray-500 mb-3">
               {ignoredCount} question{ignoredCount === 1 ? '' : 's'} ignored (non-conceptual).
             </p>
           )}
           {topics.length === 0 ? (
-            <p className="text-sm text-gray-500">
+            <p className="text-base text-gray-500">
               No recurring topics yet. Ask more questions to surface patterns.
             </p>
           ) : (
             <>
               <div className="space-y-2">
                 {visibleTopics.map((topic: any, index: number) => (
-                  <div key={index} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <div key={index} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                     <div className="flex items-start justify-between mb-1">
-                      <p className="font-medium text-gray-900">
+                      <p className="text-base font-medium text-gray-900">
                         {index + 1}. {topic.topic}
                       </p>
-                      <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded">
+                      <span className="text-sm text-gray-500 bg-white px-2 py-1 rounded">
                         {topic.count} questions
                       </span>
                     </div>
                     {topic.questions && topic.questions.length > 0 && (
-                      <div className="mt-2 text-xs text-gray-600 space-y-1">
+                      <div className="mt-2 text-sm text-gray-600 space-y-1">
                         {topic.questions.slice(0, 2).map((q: string, i: number) => (
                           <p key={i} className="pl-2 border-l-2 border-gray-300">"{q}"</p>
                         ))}
@@ -554,7 +554,7 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
                 <button
                   type="button"
                   onClick={() => setShowAllTopics(true)}
-                  className="mt-3 text-sm text-gray-600 hover:text-gray-800"
+                  className="mt-3 text-base text-gray-600 hover:text-gray-800"
                 >
                   Show more (+{remainingTopicCount} remaining lectures)
                 </button>
@@ -563,7 +563,7 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
                 <button
                   type="button"
                   onClick={() => setShowAllTopics(false)}
-                  className="mt-3 text-sm text-gray-600 hover:text-gray-800"
+                  className="mt-3 text-base text-gray-600 hover:text-gray-800"
                 >
                   Show less
                 </button>
@@ -1062,11 +1062,11 @@ export default function CourseDetailPage() {
     return (
       <div className="space-y-4">
         <div>
-          <h4 className="text-sm font-medium text-gray-900 mb-2">Sections</h4>
+          <h4 className="text-base font-medium text-gray-900 mb-2">Sections</h4>
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setSelectedSectionId({ ...selectedSectionId, [courseId]: null })}
-              className={`px-3 py-1.5 text-sm rounded-full border ${
+              className={`px-4 py-2 text-base rounded-full border ${
                 selectedSection === null ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-200'
               }`}
             >
@@ -1079,7 +1079,7 @@ export default function CourseDetailPage() {
                   setSelectedSectionId({ ...selectedSectionId, [courseId]: section.id });
                   await loadGroups(courseId, section.id);
                 }}
-                className={`px-3 py-1.5 text-sm rounded-full border ${
+                className={`px-4 py-2 text-base rounded-full border ${
                   selectedSection === section.id
                     ? 'bg-primary-600 text-white border-primary-600'
                     : 'bg-white text-gray-700 border-gray-200'
@@ -1090,7 +1090,7 @@ export default function CourseDetailPage() {
             ))}
             <button
               onClick={() => setShowManageSections({ ...showManageSections, [courseId]: true })}
-              className="px-3 py-1.5 text-sm rounded-full border border-dashed border-gray-300 text-gray-600"
+              className="px-4 py-2 text-base rounded-full border border-dashed border-gray-300 text-gray-600"
             >
               Manage Sections
             </button>
@@ -1099,45 +1099,45 @@ export default function CourseDetailPage() {
 
         {selectedSection !== null && (
           <div>
-            <h4 className="text-sm font-medium text-gray-900 mb-2">Groups</h4>
+            <h4 className="text-base font-medium text-gray-900 mb-2">Groups</h4>
             <div className="flex flex-wrap items-center gap-2">
               {visibleGroups.map((group) => (
-                <span key={group.id} className="px-3 py-1.5 text-sm rounded-full border border-gray-200 text-gray-700">
+                <span key={group.id} className="px-4 py-2 text-base rounded-full border border-gray-200 text-gray-700">
                   {group.name}
                 </span>
               ))}
               {extraGroupCount > 0 && (
-                <span className="px-3 py-1.5 text-sm rounded-full border border-gray-200 text-gray-600">
+                <span className="px-4 py-2 text-base rounded-full border border-gray-200 text-gray-600">
                   +{extraGroupCount} groups
                 </span>
               )}
               {sectionGroups.length > 3 && (
                 <button
                   onClick={() => setShowGroupsMore({ ...showGroupsMore, [courseId]: true })}
-                  className="px-3 py-1.5 text-sm rounded-full border border-dashed border-gray-300 text-gray-600"
+                  className="px-4 py-2 text-base rounded-full border border-dashed border-gray-300 text-gray-600"
                 >
                   Show More
                 </button>
               )}
               <button
                 onClick={() => setShowManageGroups({ ...showManageGroups, [courseId]: true })}
-                className="px-3 py-1.5 text-sm rounded-full border border-dashed border-gray-300 text-gray-600"
-              >
-                Manage Groups
+              className="px-4 py-2 text-base rounded-full border border-dashed border-gray-300 text-gray-600"
+            >
+              Manage Groups
               </button>
             </div>
           </div>
         )}
 
         <div>
-          <h4 className="text-sm font-medium text-gray-900 mb-2">Add Student</h4>
+          <h4 className="text-base font-medium text-gray-900 mb-2">Add Student</h4>
           <div className="flex flex-col gap-2 sm:flex-row">
             <input
               type="email"
               value={email}
               onChange={(e) => setNewStudentEmail({ ...newStudentEmail, [courseId]: e.target.value })}
               placeholder="student@example.com"
-              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="flex-1 px-4 py-2 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               onKeyPress={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
@@ -1148,51 +1148,51 @@ export default function CourseDetailPage() {
             <button
               onClick={() => handleAddStudent(courseId)}
               disabled={isAdding}
-              className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 text-base bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isAdding ? 'Adding...' : 'Add'}
             </button>
           </div>
           {selectedSection === null && (
-            <p className="mt-1 text-xs text-gray-500">Select a section to auto-assign new students.</p>
+            <p className="mt-1 text-sm text-gray-500">Select a section to auto-assign new students.</p>
           )}
           {error && (
-            <p className="mt-1 text-xs text-red-600">{error}</p>
+            <p className="mt-1 text-sm text-red-600">{error}</p>
           )}
         </div>
 
         <div>
-          <h4 className="text-sm font-medium text-gray-900 mb-2">
+          <h4 className="text-base font-medium text-gray-900 mb-2">
             Enrolled Students ({filteredStudents.length})
           </h4>
           <div className="flex flex-wrap gap-2 mb-3">
             <button
               onClick={() => setShowManageStudents({ ...showManageStudents, [courseId]: true })}
-              className="px-3 py-1.5 text-sm rounded-full border border-gray-200 text-gray-700"
+              className="px-4 py-2 text-base rounded-full border border-gray-200 text-gray-700"
             >
               Manage Students
             </button>
             <button
               onClick={() => setShowStudentsMore({ ...showStudentsMore, [courseId]: true })}
-              className="px-3 py-1.5 text-sm rounded-full border border-dashed border-gray-300 text-gray-600"
+              className="px-4 py-2 text-base rounded-full border border-dashed border-gray-300 text-gray-600"
             >
               Show More
             </button>
           </div>
-          {isLoading ? (
-            <p className="text-xs text-gray-500">Loading...</p>
+            {isLoading ? (
+            <p className="text-sm text-gray-500">Loading...</p>
           ) : filteredStudents.length === 0 ? (
-            <p className="text-xs text-gray-500">No students enrolled yet</p>
+            <p className="text-sm text-gray-500">No students enrolled yet</p>
           ) : (
             <div className="space-y-2">
               {filteredStudents.map((student, index) => (
                 <div
                   key={student.student_id}
-                  className="w-full flex items-center justify-between px-3 py-2 bg-white border border-gray-200 rounded text-sm"
+                  className="w-full flex items-center justify-between px-3 py-2 bg-white border border-gray-200 rounded text-base"
                 >
-                  <span className="text-gray-500 text-xs w-6">{index + 1}.</span>
+                  <span className="text-gray-500 text-sm w-6">{index + 1}.</span>
                   <span className="flex-1 text-gray-800">{student.student_email}</span>
-                  <span className="text-gray-500 text-xs">
+                  <span className="text-gray-500 text-sm">
                     {student.section_name || 'No section'}
                   </span>
                 </div>
@@ -1202,44 +1202,44 @@ export default function CourseDetailPage() {
         </div>
 
         {showManageSections[courseId] && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-lg font-semibold text-gray-900">Manage Sections</h4>
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-6">
+            <div className="bg-white rounded-xl shadow-xl max-w-xl w-full max-h-[90vh] overflow-y-auto p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-xl font-semibold text-gray-900">Manage Sections</h4>
                 <button
                   onClick={() => setShowManageSections({ ...showManageSections, [courseId]: false })}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 hover:text-gray-600 text-2xl p-2"
                 >
                   ✕
                 </button>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {courseSections.map((section) => (
-                  <div key={section.id} className="flex items-center justify-between border border-gray-200 rounded-lg p-3">
-                    <span className="text-sm text-gray-800">{section.name}</span>
+                  <div key={section.id} className="flex items-center justify-between border border-gray-200 rounded-lg p-4">
+                    <span className="text-base text-gray-800">{section.name}</span>
                     <button
                       onClick={() => handleDeleteSection(courseId, section.id)}
-                      className="text-xs text-red-600 hover:text-red-700"
+                      className="text-base text-red-600 hover:text-red-700 font-medium"
                     >
                       Remove
                     </button>
                   </div>
                 ))}
                 {courseSections.length === 0 && (
-                  <p className="text-sm text-gray-500">No sections yet.</p>
+                  <p className="text-base text-gray-500">No sections yet.</p>
                 )}
-                <div className="border-t border-gray-200 pt-3 space-y-2">
+                <div className="border-t border-gray-200 pt-4 space-y-3">
                   <input
                     type="text"
                     value={newSectionName[courseId] || ''}
                     onChange={(e) => setNewSectionName({ ...newSectionName, [courseId]: e.target.value })}
                     placeholder="Section name (e.g. 541)"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+                    className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg"
                   />
                   <button
                     onClick={() => handleCreateSection(courseId)}
                     disabled={addingSection[courseId]}
-                    className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                    className="px-5 py-3 text-base bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
                   >
                     {addingSection[courseId] ? 'Creating...' : 'Create Section'}
                   </button>
@@ -1250,44 +1250,44 @@ export default function CourseDetailPage() {
         )}
 
         {showManageGroups[courseId] && selectedSection !== null && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-lg font-semibold text-gray-900">Manage Groups</h4>
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-6">
+            <div className="bg-white rounded-xl shadow-xl max-w-xl w-full max-h-[90vh] overflow-y-auto p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-xl font-semibold text-gray-900">Manage Groups</h4>
                 <button
                   onClick={() => setShowManageGroups({ ...showManageGroups, [courseId]: false })}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 hover:text-gray-600 text-2xl p-2"
                 >
                   ✕
                 </button>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {sectionGroups.map((group) => (
-                  <div key={group.id} className="flex items-center justify-between border border-gray-200 rounded-lg p-3">
-                    <span className="text-sm text-gray-800">{group.name}</span>
+                  <div key={group.id} className="flex items-center justify-between border border-gray-200 rounded-lg p-4">
+                    <span className="text-base text-gray-800">{group.name}</span>
                     <button
                       onClick={() => handleDeleteGroup(courseId, selectedSection, group.id)}
-                      className="text-xs text-red-600 hover:text-red-700"
+                      className="text-base text-red-600 hover:text-red-700 font-medium"
                     >
                       Remove
                     </button>
                   </div>
                 ))}
                 {sectionGroups.length === 0 && (
-                  <p className="text-sm text-gray-500">No groups yet.</p>
+                  <p className="text-base text-gray-500">No groups yet.</p>
                 )}
-                <div className="border-t border-gray-200 pt-3 space-y-2">
+                <div className="border-t border-gray-200 pt-4 space-y-3">
                   <input
                     type="text"
                     value={newGroupName[courseId] || ''}
                     onChange={(e) => setNewGroupName({ ...newGroupName, [courseId]: e.target.value })}
                     placeholder="Group name (e.g. Group A)"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+                    className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg"
                   />
                   <button
                     onClick={() => handleCreateGroup(courseId)}
                     disabled={addingGroup[courseId]}
-                    className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                    className="px-5 py-3 text-base bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
                   >
                     {addingGroup[courseId] ? 'Creating...' : 'Create Group'}
                   </button>
@@ -1298,30 +1298,30 @@ export default function CourseDetailPage() {
         )}
 
         {showGroupsMore[courseId] && selectedSection !== null && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-lg font-semibold text-gray-900">Groups</h4>
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-6">
+            <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-xl font-semibold text-gray-900">Groups</h4>
                 <button
                   onClick={() => setShowGroupsMore({ ...showGroupsMore, [courseId]: false })}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 hover:text-gray-600 text-2xl p-2"
                 >
                   ✕
                 </button>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {sectionGroups.map((group) => (
                   <button
                     key={group.id}
                     onClick={() => setSelectedGroupDetail({ ...selectedGroupDetail, [courseId]: { id: group.id, name: group.name } })}
-                    className="w-full flex items-center justify-between px-3 py-2 border border-gray-200 rounded text-sm hover:border-primary-300"
+                    className="w-full flex items-center justify-between px-4 py-3 border border-gray-200 rounded-lg text-base hover:border-primary-300"
                   >
                     <span className="text-gray-800">{group.name}</span>
-                    <span className="text-gray-500 text-xs">({groupCounts[group.id] || 0})</span>
+                    <span className="text-gray-500 text-sm">({groupCounts[group.id] || 0})</span>
                   </button>
                 ))}
                 {sectionGroups.length === 0 && (
-                  <p className="text-sm text-gray-500">No groups yet.</p>
+                  <p className="text-base text-gray-500">No groups yet.</p>
                 )}
               </div>
             </div>
@@ -1329,15 +1329,15 @@ export default function CourseDetailPage() {
         )}
 
         {selectedGroupDetail[courseId] && selectedSection !== null && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-lg font-semibold text-gray-900">
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-6">
+            <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-xl font-semibold text-gray-900">
                   {selectedGroupDetail[courseId]!.name}
                 </h4>
                 <button
                   onClick={() => setSelectedGroupDetail({ ...selectedGroupDetail, [courseId]: null })}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 hover:text-gray-600 text-2xl p-2"
                 >
                   ✕
                 </button>
@@ -1346,9 +1346,9 @@ export default function CourseDetailPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">#</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Name</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">ID</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -1356,9 +1356,9 @@ export default function CourseDetailPage() {
                       .filter((student) => student.group_id === selectedGroupDetail[courseId]!.id)
                       .map((student, index) => (
                         <tr key={student.student_id}>
-                          <td className="px-3 py-2 text-sm text-gray-500">{index + 1}</td>
-                          <td className="px-3 py-2 text-sm text-gray-900">{student.student_email}</td>
-                          <td className="px-3 py-2 text-sm text-gray-600">{student.student_id}</td>
+                          <td className="px-4 py-3 text-base text-gray-500">{index + 1}</td>
+                          <td className="px-4 py-3 text-base text-gray-900">{student.student_email}</td>
+                          <td className="px-4 py-3 text-base text-gray-600">{student.student_id}</td>
                         </tr>
                       ))}
                   </tbody>
@@ -1369,13 +1369,13 @@ export default function CourseDetailPage() {
         )}
 
         {showManageStudents[courseId] && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-lg font-semibold text-gray-900">Manage Students</h4>
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-6">
+            <div className="bg-white rounded-xl shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-xl font-semibold text-gray-900">Manage Students</h4>
                 <button
                   onClick={() => setShowManageStudents({ ...showManageStudents, [courseId]: false })}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 hover:text-gray-600 text-2xl p-2"
                 >
                   ✕
                 </button>
@@ -1384,21 +1384,21 @@ export default function CourseDetailPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Section</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Group</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Activity</th>
-                      <th className="px-3 py-2" />
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">#</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Email</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Section</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Group</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Role</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Activity</th>
+                      <th className="px-4 py-3" />
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredStudents.map((student, index) => (
                       <tr key={student.student_id}>
-                        <td className="px-3 py-2 text-sm text-gray-500">{index + 1}</td>
-                        <td className="px-3 py-2 text-sm text-gray-900">{student.student_email}</td>
-                        <td className="px-3 py-2">
+                        <td className="px-4 py-3 text-base text-gray-500">{index + 1}</td>
+                        <td className="px-4 py-3 text-base text-gray-900">{student.student_email}</td>
+                        <td className="px-4 py-3">
                           <select
                             value={student.section_id ?? ''}
                             onChange={async (e) => {
@@ -1407,7 +1407,7 @@ export default function CourseDetailPage() {
                               await loadGroups(courseId, nextSectionId);
                               await loadCourseStudents(courseId);
                             }}
-                            className="px-2 py-1 text-sm border border-gray-300 rounded"
+                            className="px-3 py-2 text-base border border-gray-300 rounded-lg min-w-[120px]"
                           >
                             {courseSections.map((section) => (
                               <option key={section.id} value={section.id}>
@@ -1416,7 +1416,7 @@ export default function CourseDetailPage() {
                             ))}
                           </select>
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-4 py-3">
                           <select
                             value={student.group_id ?? ''}
                             onChange={async (e) => {
@@ -1425,7 +1425,7 @@ export default function CourseDetailPage() {
                               });
                               await loadCourseStudents(courseId);
                             }}
-                            className="px-2 py-1 text-sm border border-gray-300 rounded"
+                            className="px-3 py-2 text-base border border-gray-300 rounded-lg min-w-[120px]"
                           >
                             <option value="">None</option>
                             {(groupsBySection[student.section_id || 0] || []).map((group) => (
@@ -1435,31 +1435,31 @@ export default function CourseDetailPage() {
                             ))}
                           </select>
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-4 py-3">
                           <select
                             value={student.role}
                             onChange={async (e) => {
                               await handleUpdateStudent(courseId, student.student_id, { role: e.target.value as 'student' | 'ta' });
                               await loadCourseStudents(courseId);
                             }}
-                            className="px-2 py-1 text-sm border border-gray-300 rounded"
+                            className="px-3 py-2 text-base border border-gray-300 rounded-lg min-w-[100px]"
                           >
                             <option value="student">Student</option>
                             <option value="ta">TA</option>
                           </select>
                         </td>
-                        <td className="px-3 py-2 text-sm text-gray-600">
+                        <td className="px-4 py-3 text-base text-gray-600">
                           {student.questions_count} q{student.questions_count === 1 ? '' : 's'}
                           {student.last_active && (
-                            <span className="block text-xs text-gray-400">
+                            <span className="block text-sm text-gray-400">
                               {new Date(student.last_active).toLocaleDateString()}
                             </span>
                           )}
                         </td>
-                        <td className="px-3 py-2 text-right">
+                        <td className="px-4 py-3 text-right">
                           <button
                             onClick={() => handleRemoveStudent(courseId, student.student_id)}
-                            className="text-red-600 hover:text-red-700 text-xs font-medium"
+                            className="text-red-600 hover:text-red-700 text-base font-medium"
                           >
                             Remove
                           </button>
@@ -1474,13 +1474,13 @@ export default function CourseDetailPage() {
         )}
 
         {showStudentsMore[courseId] && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-5xl w-full p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-lg font-semibold text-gray-900">Student Details</h4>
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-6">
+            <div className="bg-white rounded-xl shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-xl font-semibold text-gray-900">Student Details</h4>
                 <button
                   onClick={() => setShowStudentsMore({ ...showStudentsMore, [courseId]: false })}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 hover:text-gray-600 text-2xl p-2"
                 >
                   ✕
                 </button>
@@ -1489,26 +1489,26 @@ export default function CourseDetailPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Section</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Group</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Activity</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">#</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Email</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Section</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Group</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Role</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Activity</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredStudents.map((student, index) => (
                       <tr key={student.student_id}>
-                        <td className="px-3 py-2 text-sm text-gray-500">{index + 1}</td>
-                        <td className="px-3 py-2 text-sm text-gray-900">{student.student_email}</td>
-                        <td className="px-3 py-2 text-sm text-gray-700">{student.section_name || 'No section'}</td>
-                        <td className="px-3 py-2 text-sm text-gray-700">{student.group_name || 'None'}</td>
-                        <td className="px-3 py-2 text-sm text-gray-700">{student.role}</td>
-                        <td className="px-3 py-2 text-sm text-gray-600">
+                        <td className="px-4 py-3 text-base text-gray-500">{index + 1}</td>
+                        <td className="px-4 py-3 text-base text-gray-900">{student.student_email}</td>
+                        <td className="px-4 py-3 text-base text-gray-700">{student.section_name || 'No section'}</td>
+                        <td className="px-4 py-3 text-base text-gray-700">{student.group_name || 'None'}</td>
+                        <td className="px-4 py-3 text-base text-gray-700">{student.role}</td>
+                        <td className="px-4 py-3 text-base text-gray-600">
                           {student.questions_count} q{student.questions_count === 1 ? '' : 's'}
                           {student.last_active && (
-                            <span className="block text-xs text-gray-400">
+                            <span className="block text-sm text-gray-400">
                               {new Date(student.last_active).toLocaleDateString()}
                             </span>
                           )}
@@ -1529,10 +1529,10 @@ export default function CourseDetailPage() {
     if (!sources || sources.length === 0) return null;
     return (
       <div className="mt-4">
-        <p className="text-sm font-semibold text-gray-900 mb-2">Sources</p>
+        <p className="text-base font-semibold text-gray-900 mb-2">Sources</p>
         <div className="space-y-1">
           {sources.map((source, index) => (
-            <div key={`${source.lecture_id}-${index}`} className="text-sm text-gray-600">
+            <div key={`${source.lecture_id}-${index}`} className="text-base text-gray-600">
               <span className="font-medium text-primary-600">
                 {source.lecture_name || 'Lecture'}
               </span>
@@ -1596,18 +1596,18 @@ export default function CourseDetailPage() {
                 ← Back
               </Link>
               <div>
-                <h1 className="text-xl font-semibold text-gray-900">{course.name}</h1>
+                <h1 className="text-2xl font-semibold text-gray-900">{course.name}</h1>
                 {course.description && (
-                  <p className="text-sm text-gray-500">{course.description}</p>
+                  <p className="text-base text-gray-500">{course.description}</p>
                 )}
-                <p className="text-xs text-gray-400 mt-1">{course.lecture_count} lectures</p>
+                <p className="text-sm text-gray-400 mt-1">{course.lecture_count} lectures</p>
               </div>
             </div>
             <div className="flex items-center space-x-4">
               {user?.role === 'student' && (
                 <button
                   onClick={handleLeaveCourse}
-                  className="text-sm text-red-600 hover:text-red-700"
+                  className="text-base text-red-600 hover:text-red-700"
                 >
                   Leave course
                 </button>
@@ -1617,7 +1617,7 @@ export default function CourseDetailPage() {
                   apiClient.logout();
                   router.push('/auth/login');
                 }}
-                className="text-sm text-gray-700 hover:text-gray-900"
+                className="text-base text-gray-700 hover:text-gray-900"
               >
                 Logout
               </button>
@@ -1633,16 +1633,16 @@ export default function CourseDetailPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
         {/* Zone 2: Course management */}
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Course Management</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-8">
-            <aside className="bg-white border border-gray-200 rounded-xl p-4 h-fit sticky top-24">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">Functions</h4>
+          <h3 className="text-2xl font-semibold text-gray-900 mb-4">Course Management</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-8">
+            <aside className="bg-white border border-gray-200 rounded-xl p-5 h-fit sticky top-24">
+              <h4 className="text-base font-semibold text-gray-900 mb-4">Functions</h4>
               <div className="space-y-2">
                 {categoryOptions.map((category) => (
                   <button
                     key={category}
                     onClick={() => setActiveCategory(category)}
-                    className={`w-full px-3 py-2 text-sm rounded-lg border text-left transition ${
+                    className={`w-full px-4 py-3 text-base rounded-lg border text-left transition ${
                       activeCategory === category
                         ? 'bg-primary-600 text-white border-primary-600'
                         : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
@@ -1679,7 +1679,7 @@ export default function CourseDetailPage() {
                     className="w-full px-6 py-4 flex items-center justify-between text-left"
                   >
                     <div className="flex items-center gap-3">
-                      <h3 className="text-base font-semibold text-gray-900">Lectures</h3>
+                      <h3 className="text-lg font-semibold text-gray-900">Lectures</h3>
                       {refreshing && (
                         <div className="flex items-center space-x-2 text-sm text-gray-500">
                           <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -1689,7 +1689,7 @@ export default function CourseDetailPage() {
                         </div>
                       )}
                     </div>
-                    <span className="text-sm text-gray-600">
+                    <span className="text-base text-gray-600">
                       {collapseLectures[course.id] ? '+' : '−'}
                     </span>
                   </button>
@@ -1710,9 +1710,9 @@ export default function CourseDetailPage() {
                       )}
                       <div className="mt-4 space-y-6">
                         <div>
-                          <h4 className="text-sm font-semibold text-gray-900 mb-2">Instructor uploaded materials</h4>
+                          <h4 className="text-base font-semibold text-gray-900 mb-2">Instructor uploaded materials</h4>
                           {instructorLectures.length === 0 ? (
-                            <p className="text-sm text-gray-500">No instructor uploads yet.</p>
+                            <p className="text-base text-gray-500">No instructor uploads yet.</p>
                           ) : (
                             <LectureList
                               lectures={visibleInstructorLectures}
@@ -1729,7 +1729,7 @@ export default function CourseDetailPage() {
                                   [course.id]: !showAllInstructor,
                                 })
                               }
-                              className="mt-3 text-sm text-gray-600 hover:text-gray-800"
+                              className="mt-3 text-base text-gray-600 hover:text-gray-800"
                             >
                               {showAllInstructor
                                 ? 'Show less'
@@ -1739,9 +1739,9 @@ export default function CourseDetailPage() {
                         </div>
 
                         <div className="pt-4 border-t border-gray-200">
-                          <h4 className="text-sm font-semibold text-gray-900 mb-2">Student uploaded materials</h4>
+                          <h4 className="text-base font-semibold text-gray-900 mb-2">Student uploaded materials</h4>
                           {studentLectures.length === 0 ? (
-                            <p className="text-sm text-gray-500">No student uploads yet.</p>
+                            <p className="text-base text-gray-500">No student uploads yet.</p>
                           ) : (
                             <LectureList
                               lectures={visibleStudentLectures}
@@ -1758,7 +1758,7 @@ export default function CourseDetailPage() {
                                   [course.id]: !showAllStudents,
                                 })
                               }
-                              className="mt-3 text-sm text-gray-600 hover:text-gray-800"
+                              className="mt-3 text-base text-gray-600 hover:text-gray-800"
                             >
                               {showAllStudents
                                 ? 'Show less'
@@ -1791,8 +1791,8 @@ export default function CourseDetailPage() {
                     }}
                     className="w-full px-6 py-4 flex items-center justify-between text-left"
                   >
-                    <span className="text-base font-semibold text-gray-900">Manage Students</span>
-                    <span className="text-sm text-gray-600">
+                    <span className="text-lg font-semibold text-gray-900">Manage Students</span>
+                    <span className="text-base text-gray-600">
                       {collapseManageStudents[course.id] ? '+' : '−'}
                     </span>
                   </button>
@@ -1815,8 +1815,8 @@ export default function CourseDetailPage() {
                     }
                     className="w-full px-6 py-4 flex items-center justify-between text-left"
                   >
-                    <h3 className="text-base font-semibold text-gray-900">Upload Requests</h3>
-                    <span className="text-sm text-gray-600">
+                    <h3 className="text-lg font-semibold text-gray-900">Upload Requests</h3>
+                    <span className="text-base text-gray-600">
                       {collapseUploadRequests[course.id] ? '+' : '−'}
                     </span>
                   </button>
@@ -1826,15 +1826,15 @@ export default function CourseDetailPage() {
                         <div />
                         <button
                           onClick={() => loadUploadRequests(course.id)}
-                          className="text-sm text-gray-500 hover:text-gray-700"
+                          className="text-base text-gray-500 hover:text-gray-700"
                         >
                           Refresh
                         </button>
                       </div>
                       {loadingUploadRequests[course.id] ? (
-                        <p className="text-sm text-gray-500">Loading requests...</p>
+                        <p className="text-base text-gray-500">Loading requests...</p>
                       ) : (uploadRequests[course.id] || []).length === 0 ? (
-                        <p className="text-sm text-gray-500">
+                        <p className="text-base text-gray-500">
                           No upload requests yet. Student submissions will appear here.
                         </p>
                       ) : (
@@ -1843,30 +1843,30 @@ export default function CourseDetailPage() {
                             <div key={request.id} className="border border-gray-200 rounded-lg p-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                  <p className="text-sm font-medium text-gray-900 truncate" title={request.original_name}>
+                                  <p className="text-base font-medium text-gray-900 truncate" title={request.original_name}>
                                     {request.original_name}
                                   </p>
-                                  <p className="text-xs text-gray-500 truncate" title={request.student_email || 'Student'}>
+                                  <p className="text-sm text-gray-500 truncate" title={request.student_email || 'Student'}>
                                     {request.student_email || 'Student'} • {request.file_type}
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <button
                                     onClick={() => handleApproveUpload(course.id, request.id)}
-                                    className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                                    className="px-4 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700"
                                   >
                                     Approve
                                   </button>
                                   <button
                                     onClick={() => handleRejectUpload(course.id, request.id)}
-                                    className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                                    className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700"
                                   >
                                     Reject
                                   </button>
                                 </div>
                               </div>
                               {request.created_at && (
-                                <p className="text-xs text-gray-400 mt-2">
+                                <p className="text-sm text-gray-400 mt-2">
                                   Requested {new Date(request.created_at).toLocaleString()}
                                 </p>
                               )}
@@ -1890,8 +1890,8 @@ export default function CourseDetailPage() {
                     }
                     className="w-full px-6 py-4 flex items-center justify-between text-left"
                   >
-                    <h3 className="text-base font-semibold text-gray-900">My Upload Requests</h3>
-                    <span className="text-sm text-gray-600">
+                    <h3 className="text-xl font-semibold text-gray-900">My Upload Requests</h3>
+                    <span className="text-base text-gray-600">
                       {collapseUploadRequests[course.id] ? '+' : '−'}
                     </span>
                   </button>
@@ -1901,30 +1901,30 @@ export default function CourseDetailPage() {
                         <div />
                         <button
                           onClick={() => loadMyUploadRequests(course.id)}
-                          className="text-sm text-gray-500 hover:text-gray-700"
+                          className="text-lg text-gray-500 hover:text-gray-700"
                         >
                           Refresh
                         </button>
                       </div>
                       {loadingMyUploadRequests[course.id] ? (
-                        <p className="text-sm text-gray-500">Loading requests...</p>
+                        <p className="text-lg text-gray-500">Loading requests...</p>
                       ) : (myUploadRequests[course.id] || []).length === 0 ? (
-                        <p className="text-sm text-gray-500">
+                        <p className="text-lg text-gray-500">
                           No upload requests yet. Submitted files will show here.
                         </p>
                       ) : (
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                           {(myUploadRequests[course.id] || []).map((request) => (
-                            <div key={request.id} className="border border-gray-200 rounded-lg p-3">
+                            <div key={request.id} className="border border-gray-200 rounded-lg p-4">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                  <p className="text-sm font-medium text-gray-900 truncate" title={request.original_name}>
+                                  <p className="text-lg font-medium text-gray-900 truncate" title={request.original_name}>
                                     {request.original_name}
                                   </p>
-                                  <p className="text-xs text-gray-500 truncate">{request.file_type}</p>
+                                  <p className="text-base text-gray-500 truncate">{request.file_type}</p>
                                 </div>
                                 <span
-                                  className={`text-xs px-2 py-0.5 rounded-full ${
+                                  className={`text-base px-2 py-0.5 rounded-full ${
                                     request.status === 'pending'
                                       ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
                                       : request.status === 'approved'
@@ -1936,7 +1936,7 @@ export default function CourseDetailPage() {
                                 </span>
                               </div>
                               {request.created_at && (
-                                <p className="text-xs text-gray-400 mt-2">
+                                <p className="text-base text-gray-400 mt-2">
                                   Submitted {new Date(request.created_at).toLocaleString()}
                                 </p>
                               )}
@@ -1962,23 +1962,23 @@ export default function CourseDetailPage() {
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-blue-600">📢</span>
-                      <h3 className="text-base font-semibold text-gray-900">Announcements</h3>
+                      <h3 className="text-xl font-semibold text-gray-900">Announcements</h3>
                     </div>
-                    <span className="text-sm text-gray-600">
+                    <span className="text-base text-gray-600">
                       {collapseStudentAnnouncements[course.id] ? '+' : '−'}
                     </span>
                   </button>
                   {!collapseStudentAnnouncements[course.id] && (
                     <div className="px-6 pb-6">
                       {(announcements[course.id] || []).length === 0 ? (
-                        <p className="text-sm text-gray-500">No announcements yet.</p>
+                        <p className="text-lg text-gray-500">No announcements yet.</p>
                       ) : (
-                        <div className="space-y-2">
+                        <div className="space-y-3">
                           {(announcements[course.id] || []).map((item) => (
-                            <div key={item.id} className="border border-gray-200 rounded-lg p-3">
-                              <p className="text-sm text-gray-800 whitespace-pre-wrap">{item.message}</p>
+                            <div key={item.id} className="border border-gray-200 rounded-lg p-4">
+                              <p className="text-lg text-gray-800 whitespace-pre-wrap">{item.message}</p>
                               {item.created_at && (
-                                <p className="text-xs text-gray-400 mt-2">
+                                <p className="text-base text-gray-400 mt-2">
                                   {new Date(item.created_at).toLocaleString()}
                                 </p>
                               )}
@@ -2002,8 +2002,8 @@ export default function CourseDetailPage() {
                     }
                     className="w-full px-6 py-4 flex items-center justify-between text-left"
                   >
-                    <h3 className="text-base font-semibold text-gray-900">Ask Questions</h3>
-                    <span className="text-sm text-gray-600">
+                    <h3 className="text-lg font-semibold text-gray-900">Ask Questions</h3>
+                    <span className="text-base text-gray-600">
                       {collapseAskQuestions[course.id] ? '+' : '−'}
                     </span>
                   </button>
@@ -2016,24 +2016,24 @@ export default function CourseDetailPage() {
                             onChange={(e) => setCourseQuestion(e.target.value)}
                             placeholder="Ask a question about the course content..."
                             rows={4}
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
+                            className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
                             disabled={courseAsking || course.lecture_count === 0}
                           />
-                          {course.lecture_count === 0 && (
-                            <p className="mt-2 text-sm text-gray-500">
+                            {course.lecture_count === 0 && (
+                            <p className="mt-2 text-base text-gray-500">
                               Upload at least one lecture to ask questions.
                             </p>
                           )}
                         </div>
                         {queryError && (
-                          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
+                          <div className="text-base text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
                             {queryError}
                           </div>
                         )}
                         <button
                           type="submit"
                           disabled={courseAsking || !courseQuestion.trim() || course.lecture_count === 0}
-                          className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          className="w-full px-4 py-3 text-base bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                           {courseAsking ? 'Asking...' : 'Ask Question'}
                         </button>
@@ -2042,7 +2042,7 @@ export default function CourseDetailPage() {
                       {courseAnswer && (
                         <div className="mt-6 pt-6 border-t border-gray-200">
                           <div className="prose max-w-none">
-                            <p className="text-gray-800 whitespace-pre-wrap">{courseAnswer.answer}</p>
+                            <p className="text-base text-gray-800 whitespace-pre-wrap">{courseAnswer.answer}</p>
                             {renderSources(courseAnswer.sources)}
                           </div>
                         </div>
@@ -2063,8 +2063,8 @@ export default function CourseDetailPage() {
                     }
                     className="w-full px-6 py-4 flex items-center justify-between text-left"
                   >
-                    <h4 className="text-base font-semibold text-gray-900">Announcements</h4>
-                    <span className="text-sm text-gray-600">
+                    <h4 className="text-lg font-semibold text-gray-900">Announcements</h4>
+                    <span className="text-base text-gray-600">
                       {collapseInstructorAnnouncements[course.id] ? '+' : '−'}
                     </span>
                   </button>
@@ -2074,12 +2074,12 @@ export default function CourseDetailPage() {
                         <div />
                         <button
                           onClick={() => handleExportQuestions(course.id)}
-                          className="text-sm text-gray-500 hover:text-gray-700"
+                          className="text-base text-gray-500 hover:text-gray-700"
                         >
                           Export Questions CSV
                         </button>
                       </div>
-                      <p className="text-sm text-gray-500 mb-3">
+                      <p className="text-base text-gray-500 mb-3">
                         Use announcements to clarify confusing topics or post updates.
                       </p>
                       <div className="space-y-3">
@@ -2088,7 +2088,7 @@ export default function CourseDetailPage() {
                           onChange={(e) => setNewAnnouncement({ ...newAnnouncement, [course.id]: e.target.value })}
                           placeholder="Post an announcement to this course..."
                           rows={3}
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
+                          className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
                         />
                         <div className="flex items-center justify-between">
                           {announcementError[course.id] && (
@@ -2097,18 +2097,18 @@ export default function CourseDetailPage() {
                           <button
                             onClick={() => handlePostAnnouncement(course.id)}
                             disabled={postingAnnouncement[course.id]}
-                            className="ml-auto px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                            className="ml-auto px-4 py-2 text-base bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
                           >
                             {postingAnnouncement[course.id] ? 'Posting...' : 'Post'}
                           </button>
                         </div>
                         <div className="space-y-2">
                           {(announcements[course.id] || []).length === 0 ? (
-                            <p className="text-sm text-gray-500">No announcements yet.</p>
+                            <p className="text-base text-gray-500">No announcements yet.</p>
                           ) : (
                             (announcements[course.id] || []).map((item) => (
                               <div key={item.id} className="border border-gray-200 rounded-lg p-3">
-                                <p className="text-sm text-gray-800 whitespace-pre-wrap">{item.message}</p>
+                                <p className="text-base text-gray-800 whitespace-pre-wrap">{item.message}</p>
                                 {item.created_at && (
                                   <p className="text-xs text-gray-400 mt-2">
                                     {new Date(item.created_at).toLocaleString()}

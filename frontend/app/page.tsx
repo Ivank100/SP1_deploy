@@ -289,17 +289,17 @@ export default function Home() {
         {user?.role === 'instructor' && !loadingHealth && healthStatus && (
           <div className="absolute top-4 left-4 z-10">
             {healthStatus === 'high' && (
-              <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full border border-red-200">
+              <span className="px-2 py-1 bg-red-100 text-red-700 text-sm font-medium rounded-full border border-red-200">
                 ⚠️ High activity
               </span>
             )}
             {healthStatus === 'healthy' && (
-              <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full border border-green-200">
+              <span className="px-2 py-1 bg-green-100 text-green-700 text-sm font-medium rounded-full border border-green-200">
                 🟢 Healthy
               </span>
             )}
             {healthStatus === 'new' && (
-              <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full border border-blue-200">
+              <span className="px-2 py-1 bg-blue-100 text-blue-700 text-sm font-medium rounded-full border border-blue-200">
                 New activity
               </span>
             )}
@@ -321,33 +321,47 @@ export default function Home() {
         {/* Course Card Content */}
           <div className="p-6 h-64 flex flex-col">
           <div className="flex-1">
-            <h3 className="text-2xl font-semibold text-gray-900 mb-2 line-clamp-2 group-hover:text-primary-600 transition-colors">
+            <h3 className="text-3xl font-semibold text-gray-900 mb-2 line-clamp-2 group-hover:text-primary-600 transition-colors">
               {course.name}
             </h3>
             
             {/* Show Join Code to Instructors */}
             {user?.role === 'instructor' && course.join_code && (
-              <div className="mb-2 flex items-center space-x-1">
-                <span className="text-xs uppercase font-bold text-gray-400">Join Code:</span>
-                <code className="text-sm font-mono font-bold bg-gray-50 text-primary-700 px-2 py-0.5 rounded border border-gray-200">
+              <div className="mb-2 flex items-center space-x-2">
+                <span className="text-sm uppercase font-bold text-gray-400">Join Code:</span>
+                <code className="text-base font-mono font-bold bg-gray-50 text-primary-700 px-2 py-0.5 rounded border border-gray-200">
                   {course.join_code}
                 </code>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void navigator.clipboard.writeText(course.join_code || '');
+                  }}
+                  className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-primary-600"
+                  title="Copy join code"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </button>
               </div>
             )}
 
             {course.description && (
-              <p className="text-base text-gray-500 mb-4 line-clamp-2">
+              <p className="text-base text-gray-600 mb-4 line-clamp-2">
                 {course.description}
               </p>
             )}
-            <div className="flex items-center text-sm text-gray-400 space-x-2">
+            <div className="flex items-center text-base text-gray-500 space-x-2">
               <span>{createdDate}</span>
               <span>•</span>
               <span>{course.lecture_count} {course.lecture_count === 1 ? 'lecture' : 'lectures'}</span>
             </div>
           </div>
           <div className="mt-auto pt-4 border-t border-gray-100">
-            <div className="flex items-center text-base text-primary-600 font-medium">
+            <div className="flex items-center text-lg text-primary-600 font-medium">
               <span>Open course</span>
               <svg className="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -405,7 +419,7 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setCourseTab('classes')}
-              className={`px-4 py-2 rounded-full text-sm font-medium border ${
+              className={`px-5 py-2.5 rounded-full text-base font-medium border ${
                 courseTab === 'classes' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-200'
               }`}
             >
@@ -413,7 +427,7 @@ export default function Home() {
             </button>
             <button
               onClick={() => setCourseTab('hidden')}
-              className={`px-4 py-2 rounded-full text-sm font-medium border ${
+              className={`px-5 py-2.5 rounded-full text-base font-medium border ${
                 courseTab === 'hidden' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-200'
               }`}
             >
@@ -424,15 +438,15 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setViewMode('semester')}
-              className={`px-3 py-1.5 text-sm rounded-full border ${
+              className={`px-4 py-2 text-base rounded-full border ${
                 viewMode === 'semester' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-200'
               }`}
             >
-              Semester
+              Default
             </button>
             <button
               onClick={() => setViewMode('mindmap')}
-              className={`px-3 py-1.5 text-sm rounded-full border ${
+              className={`px-4 py-2 text-base rounded-full border ${
                 viewMode === 'mindmap' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-200'
               }`}
             >
@@ -453,152 +467,167 @@ export default function Home() {
           </div>
         ) : (
           <>
-            {(courseTab === 'classes' && viewMode !== 'mindmap') && (
-              <div className="overflow-x-auto pb-6 -mx-4 px-4">
-                <div className="flex space-x-4 min-w-max">
-                  {/* Create New Course Card */}
-                  {user?.role === 'instructor' && (
-                    <div
-                      onClick={() => setShowCreateModal(true)}
-                      className="flex-shrink-0 w-64 h-64 bg-gray-100 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-primary-400 hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="w-12 h-12 bg-gray-300 rounded-full flex items-center justify-center mb-3">
-                        <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                        </svg>
-                      </div>
-                      <p className="text-base font-medium text-gray-700">Create new course</p>
-                    </div>
-                  )}
-
-                  {/* Join Course Card (Students only) */}
-                  {user?.role === 'student' && (
-                    <div
-                      onClick={() => setShowJoinModal(true)}
-                      className="flex-shrink-0 w-64 h-64 bg-blue-50 border-2 border-dashed border-blue-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-100 transition-colors"
-                    >
-                      <div className="w-12 h-12 bg-blue-200 rounded-full flex items-center justify-center mb-3">
-                        <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                        </svg>
-                      </div>
-                      <p className="text-base font-medium text-blue-700">Join course with code</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
             {viewMode === 'mindmap' ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Mindmap View</h3>
-                    <p className="text-sm text-gray-500">Semesters → Courses. Click a semester to expand.</p>
-                  </div>
+              <div className="relative min-h-[400px] py-4">
+                <div className="flex items-center justify-between mb-8">
+                  <div />
                   {user?.role === 'instructor' && (
                     <button
                       onClick={() => setShowCreateModal(true)}
-                      className="px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+                      className="px-5 py-2.5 text-base font-medium bg-primary-600 text-white rounded-lg hover:bg-primary-700"
                     >
                       Create Course
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {sortedSemesterKeys.map((term) => (
-                  <div key={term} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <div className="relative w-full h-72 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] rounded-lg overflow-hidden">
+                <div className="relative pl-2">
+                  <div
+                    className="absolute left-0 top-0 bottom-0 w-0.5 bg-gray-300"
+                    aria-hidden
+                  />
+                {sortedSemesterKeys.map((term, termIdx) => {
+                  const courses = semesterGroups[term] ?? [];
+                  const mid = Math.ceil(courses.length / 2);
+                  const leftCourses = courses.slice(0, mid);
+                  const rightCourses = courses.slice(mid);
+                  const isExpanded = expandedTerms[term];
+                  const [year] = term.split('/');
+
+                  const CourseNode = ({ course }: { course: typeof courses[0] }) => (
+                    <Link
+                      href={`/courses/${course.id}`}
+                      title={`Click to open · ${course.lecture_count} lectures`}
+                      className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-4 py-3 text-base text-gray-700 shadow-sm hover:border-primary-400 hover:shadow-md transition-all"
+                    >
+                      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary-100 text-primary-700 text-sm">
+                        📘
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-base font-medium text-gray-900 truncate">{course.name}</p>
+                        <p className="text-sm text-gray-500">{course.lecture_count} lectures</p>
+                      </div>
                       <button
-                        onClick={() => toggleHiddenTerm(term)}
-                        className="absolute top-3 right-3 z-10 text-xs px-2 py-1 rounded-full border border-gray-200 bg-white text-gray-600 hover:text-gray-800"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleHidden(course.id);
+                        }}
+                        className="shrink-0 text-xs px-2 py-1 rounded-full border border-gray-200 text-gray-500 hover:text-gray-700"
                       >
-                        {hiddenTermKeys.includes(term) ? 'Unhide' : 'Hide'}
+                        {hiddenCourseIds.includes(course.id) ? 'Unhide' : 'Hide'}
                       </button>
-                      <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full pointer-events-none">
-                        {expandedTerms[term] &&
-                          semesterGroups[term]?.map((course, idx, arr) => {
-                            const angle = (2 * Math.PI * idx) / arr.length;
-                            const radiusPct = 35;
-                            const x = 50 + Math.cos(angle) * radiusPct;
-                            const y = 50 + Math.sin(angle) * radiusPct;
-                            return (
-                              <line
-                                key={course.id}
-                                x1="50"
-                                y1="50"
-                                x2={x}
-                                y2={y}
-                                stroke="#E5E7EB"
-                                strokeWidth="1"
-                              />
-                            );
-                          })}
+                    </Link>
+                  );
+
+                  const strokeColor = '#6b7280';
+                  const ConnectorSvg = ({ side, count }: { side: 'left' | 'right'; count: number }) => {
+                    const w = 28;
+                    const branchLen = 10;
+                    const cy = 50;
+                    if (count === 0) return null;
+                    const paths: string[] = [];
+                    if (count === 1) {
+                      paths.push(`M ${side === 'left' ? w : 0},${cy} H ${side === 'left' ? 0 : w}`);
+                    } else {
+                      const stemX = side === 'left' ? branchLen : w - branchLen;
+                      paths.push(`M ${side === 'left' ? w : 0},${cy} H ${stemX}`);
+                      const yVals = Array.from({ length: count }, (_, i) => ((i + 0.5) / count) * 100);
+                      paths.push(`M ${stemX},${Math.min(...yVals)} V ${Math.max(...yVals)}`);
+                      yVals.forEach((y) => paths.push(`M ${stemX},${y} H ${side === 'left' ? 0 : w}`));
+                    }
+                    return (
+                      <svg
+                        className="shrink-0 self-center"
+                        width={w}
+                        height={100}
+                        viewBox={`0 0 ${w} 100`}
+                        preserveAspectRatio="none"
+                        style={{ height: count > 0 ? Math.max(80, count * 64) : 80 }}
+                      >
+                        {paths.map((d, i) => (
+                          <path
+                            key={i}
+                            d={d}
+                            fill="none"
+                            stroke={strokeColor}
+                            strokeWidth="1.5"
+                            vectorEffect="non-scaling-stroke"
+                          />
+                        ))}
                       </svg>
-                      <button
-                        onClick={() => toggleTerm(term)}
-                        title={`Semester ${term} — ${semesterGroups[term]?.length || 0} courses`}
-                        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full bg-primary-600 text-white flex flex-col items-center justify-center text-center shadow-md border-4 border-white"
-                      >
-                        <span className="text-xs uppercase tracking-wide opacity-90">Semester</span>
-                        <span className="text-lg font-semibold">{term}</span>
-                        <span className="text-xs opacity-90">
-                          {semesterGroups[term]?.length || 0} courses
-                        </span>
-                      </button>
-                      {expandedTerms[term] &&
-                        semesterGroups[term]?.map((course, idx, arr) => {
-                          const angle = (2 * Math.PI * idx) / arr.length;
-                          const radiusPct = 35;
-                          const x = Math.cos(angle) * radiusPct;
-                          const y = Math.sin(angle) * radiusPct;
-                          return (
-                            <Link
-                              key={course.id}
-                              href={`/courses/${course.id}`}
-                              title={`Click to open · ${course.lecture_count} lectures`}
-                              className="absolute bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 shadow-sm hover:border-primary-400 hover:shadow-md transition-all"
-                              style={{
-                                left: `calc(50% + ${x}%)`,
-                                top: `calc(50% + ${y}%)`,
-                                transform: 'translate(-50%, -50%)',
-                              }}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-primary-100 text-primary-700 text-xs">
-                                  📘
-                                </span>
-                                <div className="min-w-0">
-                                  <p className="text-sm font-medium text-gray-900 truncate">{course.name}</p>
-                                  <p className="text-xs text-gray-500">{course.lecture_count} lectures</p>
-                                </div>
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    toggleHidden(course.id);
-                                  }}
-                                  className="ml-2 text-[10px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:text-gray-700"
-                                >
-                                  {hiddenCourseIds.includes(course.id) ? 'Unhide' : 'Hide'}
-                                </button>
-                              </div>
-                            </Link>
-                          );
-                        })}
+                    );
+                  };
+
+                  return (
+                    <div
+                      key={term}
+                      className={`relative flex items-center gap-2 ${termIdx < sortedSemesterKeys.length - 1 ? 'mb-20' : ''}`}
+                    >
+                      <div className="flex-1 flex items-center justify-center gap-2 min-h-[11rem]">
+                        <div className="flex flex-col justify-center gap-3 items-end min-w-[200px]">
+                          {isExpanded && leftCourses.map((course) => (
+                            <div key={course.id} className="flex items-center w-full justify-end">
+                              <CourseNode course={course} />
+                            </div>
+                          ))}
+                        </div>
+                        {isExpanded && <ConnectorSvg side="left" count={leftCourses.length} />}
+                      </div>
+                      <div className="relative shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => toggleTerm(term)}
+                          title={`Semester ${term} — ${courses.length} courses`}
+                          className="w-44 h-44 rounded-full bg-primary-600 text-white flex flex-col items-center justify-center text-center shadow-lg border-4 border-white hover:bg-primary-700 transition-colors"
+                        >
+                          <span className="text-xs text-white/70 uppercase tracking-wide">{year}</span>
+                          <span className="text-xl font-semibold">{term}</span>
+                          <span className="text-sm text-white/80">{courses.length} courses</span>
+                        </button>
+                      </div>
+                      <div className="flex-1 flex items-center justify-center gap-2 min-h-[11rem]">
+                        {isExpanded && <ConnectorSvg side="right" count={rightCourses.length} />}
+                        <div className="flex flex-col justify-center gap-3 items-start min-w-[200px]">
+                          {isExpanded && rightCourses.map((course) => (
+                            <div key={course.id} className="flex items-center w-full justify-start">
+                              <CourseNode course={course} />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 </div>
                 {sortedSemesterKeys.length === 0 && (
                   <p className="text-sm text-gray-500">No courses to show.</p>
                 )}
               </div>
             ) : (
-              <div className="space-y-8">
+              <div>
+                <div className="flex items-center justify-between mb-8">
+                  <div />
+                  {user?.role === 'instructor' && (
+                    <button
+                      onClick={() => setShowCreateModal(true)}
+                      className="px-5 py-2.5 text-base font-medium bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+                    >
+                      Create Course
+                    </button>
+                  )}
+                  {user?.role === 'student' && (
+                    <button
+                      onClick={() => setShowJoinModal(true)}
+                      className="px-5 py-2.5 text-base font-medium bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+                    >
+                      Join with code
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-8">
                 {sortedSemesterKeys.map((groupKey) => (
                   <div key={groupKey}>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">{groupKey}</h3>
+                    <h3 className="text-xl font-semibold text-gray-900 mb-4">{groupKey}</h3>
                     <div className="flex flex-wrap gap-4">
                       {semesterGroups[groupKey].map((course) => (
                         <CourseCard key={course.id} course={course} createdDate={formatDate(course.created_at)} />
@@ -609,6 +638,7 @@ export default function Home() {
                 {visibleCourses.length === 0 && (
                   <p className="text-sm text-gray-500">No courses to show.</p>
                 )}
+                </div>
               </div>
             )}
           </>

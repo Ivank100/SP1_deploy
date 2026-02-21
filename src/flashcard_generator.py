@@ -1,6 +1,6 @@
 """
 Flashcard generation pipeline with validation, deduplication, and quality control.
-Generates exactly 10 high-quality flashcards per set.
+Generates exactly 5 high-quality flashcards per set.
 """
 import json
 import re
@@ -18,10 +18,10 @@ from .db import (
 
 
 # Hard limits
-MAX_QUESTION_WORDS = 20
-MAX_ANSWER_WORDS = 25
-CANDIDATE_COUNT = 20
-FINAL_COUNT = 10
+MAX_QUESTION_WORDS = 25
+MAX_ANSWER_WORDS = 60  # Allow informative explanations (2-3 sentences)
+CANDIDATE_COUNT = 12
+FINAL_COUNT = 5
 MAX_SIMILARITY_THRESHOLD = 0.90
 
 # Banned phrases
@@ -42,6 +42,30 @@ VAGUE_ANSWER_PATTERNS = [
     r'\bseveral\b',
     r'\bit depends\b',
 ]
+
+# Answer must not simply echo the question (e.g. Q: "What is X?" A: "X")
+def answer_echoes_question(question: str, answer: str) -> bool:
+    """Check if answer is just restating the question without adding information."""
+    q_lower = question.lower().strip()
+    a_lower = answer.lower().strip()
+    a_word_list = a_lower.split()
+    # Only reject obvious echoes: answer is nearly identical to question subject
+    for prefix in ['what is ', 'what are ', 'what was ', 'what were ', 'who is ', 'who are ',
+                   'where is ', 'where are ', 'define ']:
+        if q_lower.startswith(prefix):
+            subject = q_lower[len(prefix):].rstrip('?').strip()
+            # Clear echo: answer equals subject or subject + max 2 trivial words
+            if a_lower == subject:
+                return True
+            if len(a_word_list) <= len(subject.split()) + 2:
+                # Check if extra words add meaning
+                subject_words = set(subject.split())
+                trivial = {'the', 'a', 'an', 'is', 'are'}
+                extra = set(a_word_list) - subject_words - trivial
+                if len(extra) == 0:
+                    return True
+            break
+    return False
 
 
 def normalize_text(text: str) -> str:
@@ -102,7 +126,10 @@ def validate_flashcard(question: str, answer: str) -> Tuple[bool, Optional[str]]
     
     if question_lower.startswith(('{', '[')) or answer.lower().strip().startswith(('{', '[')):
         return False, "Question/answer appears to be JSON"
-    
+
+    if answer_echoes_question(question, answer):
+        return False, "Answer must explain the concept, not just repeat the question"
+
     return True, None
 
 
@@ -120,10 +147,12 @@ def compute_quality_score(question: str, answer: str, keypoint_text: Optional[st
         if not question_lower.startswith('how do you feel'):
             score += 1.0
     
-    # Answer length sweet spot (6-20 words)
+    # Answer length: reward informative answers (10-50 words)
     a_words = count_words(answer)
-    if 6 <= a_words <= 20:
+    if 10 <= a_words <= 50:
         score += 1.0
+    elif 6 <= a_words < 10:
+        score += 0.5  # Brief but not echo
     
     # Includes concrete term from keypoint (if provided)
     if keypoint_text:
@@ -411,8 +440,10 @@ Hard rules:
 - Return JSON only. No markdown.
 - Generate exactly N flashcard candidates (not final selection).
 - Each flashcard has: question, answer, keypoint_index.
-- Questions must be <= 20 words.
-- Answers must be <= 25 words and 1-2 short sentences max.
+- Questions must be <= 25 words.
+- Answers must be INFORMATIVE: 2-4 sentences that explain or define the concept clearly.
+  NEVER give an answer that just repeats the question (e.g. Q: "What is X?" A: "X" is wrong).
+  Answers must ADD VALUE: include definition, purpose, example, or key details from the lecture.
 - Avoid vague prompts: "explain", "discuss", "describe", "why", "write about".
 - Each flashcard must test ONE concept.
 - No citations, no page numbers, no timestamps."""
@@ -438,11 +469,12 @@ Return JSON array:
     if not candidates:
         fallback_prompt = f"""Create {candidate_count} flashcards using this format only:
 Q: <question>
-A: <answer>
+A: <informative answer - must explain or define the concept, never just repeat the question>
 
 Use these key points:
 {key_points_text}
 
+Each answer must ADD VALUE: define the term, explain its purpose, or give key details. Never answer "What is X?" with just "X".
 Return ONLY Q/A lines, no JSON, no markdown."""
         fallback_messages = [
             {"role": "system", "content": "You create flashcards from key points."},
@@ -472,8 +504,10 @@ def fill_missing_flashcards(
 Hard rules:
 - Return JSON only. No markdown.
 - Each flashcard has: question, answer, keypoint_index.
-- Questions must be <= 20 words.
-- Answers must be <= 25 words and 1-2 short sentences max.
+- Questions must be <= 25 words.
+- Answers must be INFORMATIVE: explain or define the concept clearly in 2-4 sentences.
+  NEVER just repeat the question (e.g. Q: "What is X?" A: "X" is wrong).
+  Include definition, purpose, or key details.
 - Avoid vague prompts: "explain", "discuss", "describe", "why"."""
     
     user_prompt = f"""You must generate {missing_count} additional flashcards.
@@ -496,11 +530,12 @@ Return JSON array only."""
     if not candidates:
         fallback_prompt = f"""Create {missing_count} additional flashcards using this format only:
 Q: <question>
-A: <answer>
+A: <informative answer - explain or define the concept, never just repeat the question>
 
 Use these key points:
 {key_points_text}
 
+Each answer must explain the concept clearly. Never answer "What is X?" with just "X".
 Return ONLY Q/A lines, no JSON, no markdown."""
         fallback_messages = [
             {"role": "system", "content": "You create flashcards from key points."},
@@ -521,7 +556,7 @@ def generate_flashcards_v2(
 ) -> List[Dict[str, Any]]:
     """
     Main flashcard generation pipeline.
-    Returns list of 10 validated flashcards.
+    Returns list of 5 validated flashcards.
     """
     # 1. Fetch keypoints
     key_points = _get_lecture_key_points(lecture_id)
@@ -572,7 +607,7 @@ def generate_flashcards_v2(
     
     deduplicated = deduplicate_candidates(validated, existing_questions, embedding_func)
     
-    # 6. Select best 10 with coverage
+    # 6. Select best 5 with coverage
     max_per_keypoint = 2 if len(key_points) >= 5 else 3
     selected = select_final_flashcards(
         deduplicated,
@@ -626,9 +661,14 @@ def generate_flashcards_v2(
                 question = kp_text if kp_text.endswith("?") else f"{kp_text}?"
             else:
                 question = f"What is {kp_text}?"
-            answer = kp_text
             if normalize_text(question) in normalized_existing:
                 continue
+            try:
+                answer = _expand_keypoint_to_answer(kp_text, question)
+                if answer_echoes_question(question, answer):
+                    continue  # Skip if LLM still produced echo
+            except Exception:
+                answer = kp_text  # Last resort
             is_valid, _ = validate_flashcard(question, answer)
             if not is_valid:
                 continue
@@ -652,6 +692,28 @@ def generate_flashcards_v2(
             card["source_keypoint_id"] = kp_idx - 1  # 0-indexed for storage
     
     return final
+
+
+def _expand_keypoint_to_answer(keypoint: str, question: str) -> str:
+    """Use LLM to create an informative answer from a keypoint when fallback is needed."""
+    try:
+        client = DeepSeekClient()
+        messages = [
+            {"role": "system", "content": "You provide brief, informative definitions for study flashcards. Give a clear explanation in 2-3 sentences. Never just repeat the question or term."},
+            {"role": "user", "content": f"Key point: {keypoint}\n\nQuestion: {question}\n\nProvide a clear, informative answer (2-3 sentences) that explains this concept:"},
+        ]
+        response = client.chat(messages, temperature=0.3).strip()
+        if response and not answer_echoes_question(question, response):
+            return response[:500]
+        # LLM returned echo, try minimal expansion
+        messages[1]["content"] = f"Define or explain: {keypoint}. One sentence only."
+        response = client.chat(messages, temperature=0.2).strip()
+        if response and not answer_echoes_question(question, response):
+            return response[:400]
+    except Exception:
+        pass
+    # Last resort: prepend a minimal explanation to keypoint
+    return f"A core concept in the lecture: {keypoint}. Review the material for full details."
 
 
 def _get_lecture_key_points(lecture_id: int) -> List[str]:
