@@ -70,7 +70,7 @@ export default function LecturePage() {
   const [flashcardsLoading, setFlashcardsLoading] = useState(false);
   const [showRecentQuestions, setShowRecentQuestions] = useState(true);
   const [questionFilter, setQuestionFilter] = useState<'all' | 'answered' | 'unanswered' | 'flagged' | 'hidden'>('all');
-  const [questionSort, setQuestionSort] = useState<'newest' | 'most_liked' | 'most_repeated'>('newest');
+  const [questionSort, setQuestionSort] = useState<'newest' | 'oldest' | 'most_repeated'>('newest');
   const [faqQuestionIds, setFaqQuestionIds] = useState<Set<number>>(new Set());
   const [pinnedQuestionIds, setPinnedQuestionIds] = useState<Set<number>>(new Set());
   const [hiddenQuestionIds, setHiddenQuestionIds] = useState<Set<number>>(new Set());
@@ -92,6 +92,8 @@ export default function LecturePage() {
   const [showSummaryTool, setShowSummaryTool] = useState(true);
   const [showKeyConceptsTool, setShowKeyConceptsTool] = useState(true);
   const [showFlashcardsTool, setShowFlashcardsTool] = useState(true);
+  type LecturePanel = 'all' | 'analytics' | 'management' | 'resources' | 'questions';
+  const [activeLecturePanel, setActiveLecturePanel] = useState<LecturePanel>('all');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const slideViewerRef = useRef<SlideViewerRef>(null);
   const replaceFileInputRef = useRef<HTMLInputElement>(null);
@@ -462,39 +464,36 @@ export default function LecturePage() {
     const pinnedDelta = Number(pinnedQuestionIds.has(b.id)) - Number(pinnedQuestionIds.has(a.id));
     if (pinnedDelta !== 0) return pinnedDelta;
     if (questionSort === 'most_repeated') {
-      const countDelta =
-        (questionFrequency[b.question.trim().toLowerCase()] || 0) -
-        (questionFrequency[a.question.trim().toLowerCase()] || 0);
-      if (countDelta !== 0) return countDelta;
-    }
-    if (questionSort === 'most_liked') {
-      const countDelta =
-        (questionFrequency[b.question.trim().toLowerCase()] || 0) -
-        (questionFrequency[a.question.trim().toLowerCase()] || 0);
+      const countA = questionFrequency[a.question.trim().toLowerCase()] || 0;
+      const countB = questionFrequency[b.question.trim().toLowerCase()] || 0;
+      const countDelta = countB - countA; // higher count first
       if (countDelta !== 0) return countDelta;
     }
     const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
     const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-    return timeB - timeA;
+    if (questionSort === 'oldest') {
+      return timeA - timeB; // older (smaller timestamp) first
+    }
+    return timeB - timeA; // newest first (default)
   });
 
   const renderFrequencyPolygon = () => {
     if (loadingAnalytics) {
-      return <p className="text-sm text-gray-500">Loading lecture timeline...</p>;
+      return <p className="text-base text-gray-500">Loading lecture timeline...</p>;
     }
     if (analyticsError) {
-      return <p className="text-sm text-red-600">{analyticsError}</p>;
+      return <p className="text-base text-red-600">{analyticsError}</p>;
     }
     if (!lecture || lecture.file_type !== 'pdf') {
       return (
-        <p className="text-sm text-gray-500">
+        <p className="text-base text-gray-500">
           Document-position heatmap is available for PDF lectures.
         </p>
       );
     }
     if (lecture.page_count <= 0) {
       return (
-        <p className="text-sm text-gray-500">
+        <p className="text-base text-gray-500">
           Lecture pages are not available yet.
         </p>
       );
@@ -502,7 +501,7 @@ export default function LecturePage() {
     const pageQuestions = history.filter((item) => item.page_number != null);
     if (pageQuestions.length === 0) {
       return (
-        <p className="text-sm text-gray-500">
+        <p className="text-base text-gray-500">
           No page-linked questions yet. Ask questions to build the document-position heatmap.
         </p>
       );
@@ -545,10 +544,10 @@ export default function LecturePage() {
                   style={{ backgroundColor: `rgba(37, 99, 235, ${0.15 + 0.75 * intensity})` }}
                   title={`${formatRangeLabel(bin)} • ${bin.count} questions`}
                 />
-                <span className="mt-2 text-[10px] text-gray-500">
+                <span className="mt-2 text-sm text-gray-500">
                   {formatRangeLabel(bin)}
                 </span>
-                <span className="text-[10px] text-gray-400">{bin.count}</span>
+                <span className="text-sm text-gray-400">{bin.count}</span>
               </div>
             );
           })}
@@ -618,16 +617,16 @@ export default function LecturePage() {
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
               {lecture?.course_id ? (
-                <Link
+                  <Link
                   href={`/courses/${lecture.course_id}`}
-                  className="text-sm font-medium text-gray-700 hover:text-primary-600"
+                  className="text-base font-medium text-gray-700 hover:text-primary-600"
                 >
                   ← Back to Course
                 </Link>
               ) : (
               <Link
                 href="/"
-                className="text-sm font-medium text-gray-700 hover:text-primary-600"
+                className="text-base font-medium text-gray-700 hover:text-primary-600"
               >
                 ← Back to Courses
               </Link>
@@ -636,15 +635,15 @@ export default function LecturePage() {
             {currentUser ? (
               <div className="flex items-center space-x-3">
                 <div className="flex flex-col items-end">
-                  <span className="text-sm font-medium text-gray-900">{currentUser.email}</span>
-                  <span className="text-xs text-gray-500 capitalize">{currentUser.role}</span>
+                <span className="text-base font-medium text-gray-900">{currentUser.email}</span>
+                <span className="text-sm text-gray-500 capitalize">{currentUser.role}</span>
                 </div>
                 <button
                   onClick={() => {
                     apiClient.logout();
                     router.push('/auth/login');
                   }}
-                  className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-md transition-colors"
+                  className="px-4 py-2 text-base font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-md transition-colors"
                 >
                   Logout
                 </button>
@@ -655,8 +654,8 @@ export default function LecturePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-bold text-gray-900">{lecture.original_name}</h1>
-              <p className="text-sm text-gray-500">
+              <h1 className="text-2xl font-bold text-gray-900">{lecture.original_name}</h1>
+              <p className="text-base text-gray-500">
                 {lecture.file_type === 'audio'
                   ? 'Audio lecture'
                   : lecture.file_type === 'slides'
@@ -669,7 +668,7 @@ export default function LecturePage() {
       </header>
 
       <div className="sticky top-16 z-10 bg-white/95 backdrop-blur border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 text-sm text-gray-600 flex items-center gap-2 min-w-0">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 text-base text-gray-600 flex items-center gap-2 min-w-0">
           <span className="font-medium text-gray-900 truncate max-w-[45%]">
             {courseName || (lecture.course_id ? `Course ${lecture.course_id}` : 'Course')}
           </span>
@@ -680,6 +679,36 @@ export default function LecturePage() {
 
       {/* Main Content */}
       <div className="flex-1 flex max-w-7xl mx-auto w-full">
+        {isInstructor ? (
+          <div className="flex-1 flex w-full">
+            {/* Left Menu - Instructor */}
+            <aside className="bg-white border-r border-gray-200 w-64 min-w-64 p-5 h-fit sticky top-[7.5rem]">
+              <h4 className="text-base font-semibold text-gray-900 mb-4">Navigation</h4>
+              <div className="space-y-2">
+                {(['all', 'analytics', 'management', 'resources', 'questions'] as const).map((panel) => (
+                  <button
+                    key={panel}
+                    onClick={() => setActiveLecturePanel(panel)}
+                    className={`w-full px-4 py-3 text-base rounded-lg border text-left transition ${
+                      activeLecturePanel === panel
+                        ? 'bg-primary-600 text-white border-primary-600'
+                        : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    {panel === 'all'
+                      ? 'All'
+                      : panel === 'analytics'
+                      ? 'Lecture Analytics'
+                      : panel === 'management'
+                      ? 'Lecture Management'
+                      : panel === 'resources'
+                      ? 'Lecture Resources'
+                      : 'Recent Questions'}
+                  </button>
+                ))}
+              </div>
+            </aside>
+            <div className="flex-1 flex flex-col min-w-0">
         {/* Chat Area */}
         <div className="flex-1 flex flex-col">
           {lecture.file_type === 'slides' && (
@@ -687,8 +716,8 @@ export default function LecturePage() {
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Slide Viewer</h3>
-                    <p className="text-sm text-gray-500">
+                    <h3 className="text-xl font-semibold text-gray-900">Slide Viewer</h3>
+                    <p className="text-base text-gray-500">
                       Browse slides and see the extracted text for each slide.
                     </p>
                   </div>
@@ -711,15 +740,15 @@ export default function LecturePage() {
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Audio Playback & Transcript</h3>
-                    <p className="text-sm text-gray-500">
+                    <h3 className="text-xl font-semibold text-gray-900">Audio Playback & Transcript</h3>
+                    <p className="text-base text-gray-500">
                       Listen to the lecture and jump to specific segments via the transcript.
                     </p>
                   </div>
                   <button
                     onClick={handleTranscribeAudio}
                     disabled={transcribing}
-                    className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-4 py-2 bg-primary-600 text-white rounded-lg text-base font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {transcribing
                       ? 'Transcribing...'
@@ -729,7 +758,7 @@ export default function LecturePage() {
                   </button>
                 </div>
                 {transcriptionError && (
-                  <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+                  <div className="mb-4 text-base text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
                     {transcriptionError}
                   </div>
                 )}
@@ -750,71 +779,73 @@ export default function LecturePage() {
                       />
                     )}
                     {!lecture.has_transcript && !transcribing && (
-                      <p className="text-sm text-gray-500 mt-4">
+                      <p className="text-base text-gray-500 mt-4">
                         Transcript not generated yet. Run transcription to enable timestamped search.
                       </p>
                     )}
                   </>
                 ) : (
-                  <p className="text-sm text-gray-500">Audio file unavailable.</p>
+                  <p className="text-base text-gray-500">Audio file unavailable.</p>
                 )}
               </div>
             </div>
           )}
-          {isInstructor ? (
             <div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+              {(activeLecturePanel === 'all' || activeLecturePanel === 'analytics') && (
+              <>
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900">Lecture Analytics</h2>
-                    <p className="text-sm text-gray-500">Engagement and question activity for this lecture.</p>
+                    <p className="text-base text-gray-500">Engagement and question activity for this lecture.</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <p className="text-xs text-gray-500 mb-1">Total Questions</p>
-                    <p className="text-2xl font-bold text-gray-900">
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-5">
+                    <p className="text-sm text-gray-500 mb-1">Total Questions</p>
+                    <p className="text-3xl font-bold text-gray-900">
                       {lectureAnalytics?.total_questions ?? 0}
                     </p>
                   </div>
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <p className="text-xs text-gray-500 mb-1">Active Students</p>
-                    <p className="text-2xl font-bold text-gray-900">
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-5">
+                    <p className="text-sm text-gray-500 mb-1">Active Students</p>
+                    <p className="text-3xl font-bold text-gray-900">
                       {lectureAnalytics?.active_students ?? 0}
                     </p>
                   </div>
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <p className="text-xs text-gray-500 mb-1">Peak Confused Lecture Pages</p>
-                    <p className="text-lg font-semibold text-gray-900">
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-5">
+                    <p className="text-sm text-gray-500 mb-1">Peak Confused Lecture Pages</p>
+                    <p className="text-xl font-semibold text-gray-900">
                       {peakConfusedPages ?? lectureAnalytics?.peak_confusion_range ?? 'N/A'}
                     </p>
                   </div>
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <p className="text-xs text-gray-500 mb-1">Top Confused Question</p>
-                    <p className="text-sm font-semibold text-gray-900 line-clamp-3">
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-5">
+                    <p className="text-sm text-gray-500 mb-1">Top Confused Question</p>
+                    <p className="text-base font-semibold text-gray-900 line-clamp-3">
                       {lectureAnalytics?.top_confused_question || 'N/A'}
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 lg:col-span-2">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Lecture Timeline / Heatmap</h3>
-                      <p className="text-sm text-gray-500">
-                        Confusion intensity across different parts of the lecture material.
-                      </p>
-                    </div>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-xl font-semibold text-gray-900">Lecture Timeline / Heatmap</h3>
+                    <p className="text-base text-gray-500">
+                      Confusion intensity across different parts of the lecture material.
+                    </p>
                   </div>
-                  {renderFrequencyPolygon()}
                 </div>
+                {renderFrequencyPolygon()}
+              </div>
+              </>
+              )}
 
-                <div className="space-y-6">
+              {(activeLecturePanel === 'all' || activeLecturePanel === 'management') && (
                   <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Lecture Management</h3>
-                    <div className="space-y-3 text-sm text-gray-700">
+                    <h3 className="text-xl font-semibold text-gray-900 mb-4">Lecture Management</h3>
+                    <div className="space-y-3 text-base text-gray-700">
                       <div className="flex items-center justify-between">
                         <span>Visibility</span>
                         <span className="font-medium">
@@ -842,44 +873,17 @@ export default function LecturePage() {
                       <button
                         type="button"
                         onClick={() => replaceFileInputRef.current?.click()}
-                        className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+                        className="px-4 py-3 text-base border border-gray-300 rounded-lg hover:bg-gray-50"
                       >
                         Replace PDF
                       </button>
                       <button
                         type="button"
                         onClick={handleRenameLecture}
-                        className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+                        className="px-4 py-3 text-base border border-gray-300 rounded-lg hover:bg-gray-50"
                       >
                         Rename lecture
                       </button>
-                    </div>
-                    <div className="mt-4 border-t border-gray-200 pt-4">
-                      <p className="text-xs text-red-600 mb-2">Danger zone</p>
-                      <div className="grid grid-cols-1 gap-2">
-                        <button
-                          type="button"
-                          onClick={handleArchiveLecture}
-                          className="px-3 py-2 text-sm border border-red-200 text-red-700 rounded-lg hover:bg-red-50"
-                        >
-                          Archive lecture
-                        </button>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!confirm('Delete this lecture? This cannot be undone.')) return;
-                            try {
-                              await apiClient.deleteLecture(lectureId);
-                              router.push('/');
-                            } catch (error: any) {
-                              alert(error.response?.data?.detail || 'Failed to delete lecture');
-                            }
-                          }}
-                          className="px-3 py-2 text-sm border border-red-200 text-red-700 rounded-lg hover:bg-red-50"
-                        >
-                          Delete lecture
-                        </button>
-                      </div>
                     </div>
                     <input
                       ref={replaceFileInputRef}
@@ -895,48 +899,50 @@ export default function LecturePage() {
                       }}
                     />
                   </div>
+              )}
 
+              {(activeLecturePanel === 'all' || activeLecturePanel === 'resources') && (
                   <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Lecture Resources</h3>
-                    <div className="space-y-3 text-sm text-gray-700">
+                    <h3 className="text-xl font-semibold text-gray-900 mb-4">Lecture Resources</h3>
+                    <div className="space-y-3 text-base text-gray-700">
                       <div>
-                        <p className="text-xs text-gray-500 mb-1">Primary file</p>
-                        <p className="font-medium">{lecture?.original_name || 'Untitled lecture'}</p>
+                        <p className="text-sm text-gray-500 mb-1">Primary file</p>
+                        <p className="font-medium text-base">{lecture?.original_name || 'Untitled lecture'}</p>
                         <div className="mt-2 flex flex-wrap gap-2">
                           <a
                             href={lecture?.file_path ? `${normalizedApiBase}/${lecture.file_path.replace(/^\/+/, '')}` : '#'}
                             target="_blank"
                             rel="noreferrer"
-                            className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50"
+                            className="px-4 py-2 text-base border border-gray-300 rounded-lg hover:bg-gray-50"
                           >
                             Preview
                           </a>
                           <a
                             href={lecture?.file_path ? `${normalizedApiBase}/${lecture.file_path.replace(/^\/+/, '')}` : '#'}
                             download
-                            className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50"
+                            className="px-4 py-2 text-base border border-gray-300 rounded-lg hover:bg-gray-50"
                           >
                             Download
                           </a>
                           <button
                             type="button"
                             onClick={() => replaceFileInputRef.current?.click()}
-                            className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50"
+                            className="px-4 py-2 text-base border border-gray-300 rounded-lg hover:bg-gray-50"
                           >
                             Replace
                           </button>
                         </div>
                       </div>
                       <div className="border-t border-gray-200 pt-3">
-                        <p className="text-xs text-gray-500 mb-2">Additional materials</p>
+                        <p className="text-sm text-gray-500 mb-2">Additional materials</p>
                         {loadingResources ? (
-                          <p className="text-sm text-gray-500">Loading resources...</p>
+                          <p className="text-base text-gray-500">Loading resources...</p>
                         ) : lectureResources.length === 0 ? (
-                          <p className="text-sm text-gray-500">No additional resources yet.</p>
+                          <p className="text-base text-gray-500">No additional resources yet.</p>
                         ) : (
                           <div className="space-y-2">
                             {lectureResources.map((resource) => (
-                              <div key={resource.id} className="flex items-center justify-between gap-2 text-sm">
+                              <div key={resource.id} className="flex items-center justify-between gap-2 text-base">
                                 <a
                                   href={resource.url}
                                   target="_blank"
@@ -949,7 +955,7 @@ export default function LecturePage() {
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteResource(resource.id)}
-                                  className="text-xs text-red-600 hover:text-red-700"
+                                  className="text-base text-red-600 hover:text-red-700"
                                 >
                                   Remove
                                 </button>
@@ -960,26 +966,26 @@ export default function LecturePage() {
                         <button
                           type="button"
                           onClick={handleAddResource}
-                          className="mt-3 px-3 py-2 text-xs border border-gray-300 rounded-lg hover:bg-gray-50"
+                          className="mt-3 px-4 py-2 text-base border border-gray-300 rounded-lg hover:bg-gray-50"
                         >
                           Add resource
                         </button>
                       </div>
                     </div>
                   </div>
-                </div>
-              </div>
+              )}
 
+              {(activeLecturePanel === 'all' || activeLecturePanel === 'questions') && (
               <div className={`rounded-xl shadow-sm border ${showRecentQuestions ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-200'}`}>
                 <button
                   onClick={() => setShowRecentQuestions(!showRecentQuestions)}
                   className="w-full px-6 py-4 flex items-center justify-between text-left"
                 >
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Recent Questions</h3>
-                    <p className="text-sm text-gray-500">Latest questions submitted for this lecture.</p>
+                    <h3 className="text-xl font-semibold text-gray-900">Recent Questions</h3>
+                    <p className="text-base text-gray-500">Latest questions submitted for this lecture.</p>
                   </div>
-                  <span className="text-sm text-gray-600">{showRecentQuestions ? '−' : '+'}</span>
+                  <span className="text-base text-gray-600">{showRecentQuestions ? '−' : '+'}</span>
                 </button>
                 {showRecentQuestions && (
                   <div className="px-6 pb-6 space-y-4">
@@ -990,7 +996,7 @@ export default function LecturePage() {
                             key={filter}
                             type="button"
                             onClick={() => setQuestionFilter(filter)}
-                            className={`px-3 py-1.5 text-xs rounded-full border ${
+                            className={`px-4 py-2 text-base rounded-full border ${
                               questionFilter === filter
                                 ? 'bg-primary-600 text-white border-primary-600'
                                 : 'bg-white text-gray-700 border-gray-200'
@@ -1002,7 +1008,7 @@ export default function LecturePage() {
                         <button
                           type="button"
                           onClick={() => setQuestionFilter('hidden')}
-                          className={`px-3 py-1.5 text-xs rounded-full border ${
+                          className={`px-4 py-2 text-base rounded-full border ${
                             questionFilter === 'hidden'
                               ? 'bg-primary-600 text-white border-primary-600'
                               : 'bg-white text-gray-700 border-gray-200'
@@ -1011,21 +1017,21 @@ export default function LecturePage() {
                           Hidden
                         </button>
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <div className="flex items-center gap-2 text-base text-gray-500">
                         <span>Sort</span>
                         <select
                           value={questionSort}
-                          onChange={(e) => setQuestionSort(e.target.value as typeof questionSort)}
-                          className="px-2 py-1 text-xs border border-gray-300 rounded"
+                          onChange={(e) => setQuestionSort(e.target.value as 'newest' | 'oldest' | 'most_repeated')}
+                          className="px-3 py-2 text-base border border-gray-300 rounded-lg"
                         >
                           <option value="newest">Newest</option>
-                          <option value="most_liked">Most liked</option>
+                          <option value="oldest">Oldest</option>
                           <option value="most_repeated">Most repeated</option>
                         </select>
                       </div>
                     </div>
                     {sortedHistory.length === 0 ? (
-                      <p className="text-sm text-gray-500">
+                      <p className="text-base text-gray-500">
                         No questions match this filter yet.
                       </p>
                     ) : (
@@ -1038,23 +1044,23 @@ export default function LecturePage() {
                             <div key={item.id} className="border border-gray-200 rounded-lg p-4 space-y-3">
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
-                                  <p className="text-sm text-gray-800 font-medium">{item.question}</p>
-                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                                  <p className="text-base text-gray-800 font-medium">{item.question}</p>
+                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
                                     <span>{item.user_email || 'Student'}</span>
                                     <span>•</span>
                                     <span>{formatHistoryTime(item.created_at)}</span>
                                   </div>
                                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                                    <span className={`px-2 py-0.5 rounded-full text-xs border ${isAnswered ? 'bg-green-50 text-green-700 border-green-100' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                                    <span className={`px-2 py-0.5 rounded-full text-sm border ${isAnswered ? 'bg-green-50 text-green-700 border-green-100' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
                                       {isAnswered ? 'Answered' : 'Unanswered'}
                                     </span>
                                     {isFlagged && (
-                                      <span className="px-2 py-0.5 rounded-full text-xs border bg-amber-50 text-amber-700 border-amber-200">
+                                      <span className="px-2 py-0.5 rounded-full text-sm border bg-amber-50 text-amber-700 border-amber-200">
                                         FAQ
                                       </span>
                                     )}
                                     {isPinned && (
-                                      <span className="px-2 py-0.5 rounded-full text-xs border bg-blue-50 text-blue-700 border-blue-200">
+                                      <span className="px-2 py-0.5 rounded-full text-sm border bg-blue-50 text-blue-700 border-blue-200">
                                         Pinned
                                       </span>
                                     )}
@@ -1070,39 +1076,39 @@ export default function LecturePage() {
                                         [item.id]: prev[item.id] ?? manualAnswers[item.id] ?? item.answer ?? '',
                                       }));
                                     }}
-                                    className="px-2.5 py-1 text-xs border border-gray-300 rounded-lg hover:bg-gray-50"
+                                    className="px-4 py-2 text-base border border-gray-300 rounded-lg hover:bg-gray-50"
                                   >
                                     Answer
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => toggleId(setFaqQuestionIds, item.id)}
-                                    className="px-2.5 py-1 text-xs border border-gray-300 rounded-lg hover:bg-gray-50"
+                                    className="px-4 py-2 text-base border border-gray-300 rounded-lg hover:bg-gray-50"
                                   >
                                     {isFlagged ? 'Unmark FAQ' : 'Mark FAQ'}
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => toggleId(setPinnedQuestionIds, item.id)}
-                                    className="px-2.5 py-1 text-xs border border-gray-300 rounded-lg hover:bg-gray-50"
+                                    className="px-4 py-2 text-base border border-gray-300 rounded-lg hover:bg-gray-50"
                                   >
                                     {isPinned ? 'Unpin' : 'Pin'}
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => toggleId(setHiddenQuestionIds, item.id)}
-                                    className="px-2.5 py-1 text-xs border border-gray-300 rounded-lg hover:bg-gray-50"
+                                    className="px-4 py-2 text-base border border-gray-300 rounded-lg hover:bg-gray-50"
                                   >
                                     {hiddenQuestionIds.has(item.id) ? 'Unhide' : 'Hide'}
                                   </button>
                                 </div>
                               </div>
                               {item.answer && (
-                                <p className="text-sm text-gray-600 line-clamp-3">{item.answer}</p>
+                                <p className="text-base text-gray-600 line-clamp-3">{item.answer}</p>
                               )}
                               {manualAnswers[item.id] && (
-                                <div className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-md p-3">
-                                  <p className="text-xs uppercase text-blue-500 mb-1">Instructor note</p>
+                                <div className="text-base text-blue-700 bg-blue-50 border border-blue-100 rounded-md p-3">
+                                  <p className="text-sm uppercase text-blue-500 mb-1">Instructor note</p>
                                   <p className="whitespace-pre-wrap">{manualAnswers[item.id]}</p>
                                 </div>
                               )}
@@ -1114,7 +1120,7 @@ export default function LecturePage() {
                                       setAnswerDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))
                                     }
                                     rows={3}
-                                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                    className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                                     placeholder="Write an instructor note or answer..."
                                   />
                                   <div className="mt-2 flex items-center gap-2">
@@ -1133,14 +1139,14 @@ export default function LecturePage() {
                                         });
                                         setActiveAnswerId(null);
                                       }}
-                                      className="px-3 py-1.5 text-xs bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+                                      className="px-4 py-2 text-base bg-primary-600 text-white rounded-lg hover:bg-primary-700"
                                     >
                                       Save
                                     </button>
                                     <button
                                       type="button"
                                       onClick={() => setActiveAnswerId(null)}
-                                      className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50"
+                                      className="px-4 py-2 text-base border border-gray-300 rounded-lg hover:bg-gray-50"
                                     >
                                       Cancel
                                     </button>
@@ -1155,13 +1161,17 @@ export default function LecturePage() {
                   </div>
                 )}
               </div>
+              )}
             </div>
+            </div>
+            </div>
+          </div>
           ) : (
             <div className="flex-1 flex">
               <aside className="w-80 border-r border-gray-200 bg-white p-4 space-y-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Study Tools</h3>
-                  <p className="text-xs text-gray-500">Generate learning aids for this lecture.</p>
+                  <h3 className="text-xl font-semibold text-gray-900">Study Tools</h3>
+                  <p className="text-sm text-gray-500">Generate learning aids for this lecture.</p>
                 </div>
 
                 <div className={`rounded-xl shadow-sm border ${showSummaryTool ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-200'}`}>
@@ -1170,26 +1180,26 @@ export default function LecturePage() {
                     className="w-full px-4 py-3 flex items-center justify-between text-left"
                   >
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-900">Lecture Summary</h4>
-                      <p className="text-xs text-gray-500">Concise overview of the lecture.</p>
+                      <h4 className="text-base font-semibold text-gray-900">Lecture Summary</h4>
+                      <p className="text-sm text-gray-500">Concise overview of the lecture.</p>
                     </div>
-                    <span className="text-xs text-gray-600">{showSummaryTool ? 'Collapse' : 'Expand'}</span>
+                    <span className="text-sm text-gray-600">{showSummaryTool ? 'Collapse' : 'Expand'}</span>
                   </button>
                   {showSummaryTool && (
                     <div className="px-4 pb-4 space-y-3">
                       <button
                         onClick={handleGenerateSummary}
-                        className="w-full px-3 py-2 bg-primary-600 text-white rounded-lg text-xs font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg text-base font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={summaryLoading}
                       >
                         {summaryLoading ? 'Generating...' : materials?.summary ? 'Regenerate' : 'Generate'}
                       </button>
                       {loadingMaterials ? (
-                        <p className="text-xs text-gray-500">Loading...</p>
+                        <p className="text-sm text-gray-500">Loading...</p>
                       ) : materials?.summary ? (
-                        <p className="text-xs text-gray-700 whitespace-pre-wrap">{materials.summary}</p>
+                        <p className="text-base text-gray-700 whitespace-pre-wrap">{materials.summary}</p>
                       ) : (
-                        <p className="text-xs text-gray-500">No summary yet.</p>
+                        <p className="text-sm text-gray-500">No summary yet.</p>
                       )}
                     </div>
                   )}
@@ -1201,30 +1211,30 @@ export default function LecturePage() {
                     className="w-full px-4 py-3 flex items-center justify-between text-left"
                   >
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-900">Key Points</h4>
-                      <p className="text-xs text-gray-500">Exam-focused highlights.</p>
+                      <h4 className="text-base font-semibold text-gray-900">Key Points</h4>
+                      <p className="text-sm text-gray-500">Exam-focused highlights.</p>
                     </div>
-                    <span className="text-xs text-gray-600">{showKeyConceptsTool ? 'Collapse' : 'Expand'}</span>
+                    <span className="text-sm text-gray-600">{showKeyConceptsTool ? 'Collapse' : 'Expand'}</span>
                   </button>
                   {showKeyConceptsTool && (
                     <div className="px-4 pb-4 space-y-3">
                       <button
                         onClick={handleGenerateKeyPoints}
-                        className="w-full px-3 py-2 bg-primary-600 text-white rounded-lg text-xs font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg text-base font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={keyPointsLoading}
                       >
                         {keyPointsLoading ? 'Generating...' : materials?.key_points?.length ? 'Regenerate' : 'Generate'}
                       </button>
                       {loadingMaterials ? (
-                        <p className="text-xs text-gray-500">Loading...</p>
+                        <p className="text-sm text-gray-500">Loading...</p>
                       ) : materials?.key_points && materials.key_points.length > 0 ? (
-                        <ul className="list-disc pl-4 space-y-1 text-xs text-gray-700">
+                        <ul className="list-disc pl-4 space-y-1 text-base text-gray-700">
                           {materials.key_points.map((point, idx) => (
                             <li key={idx}>{point}</li>
                           ))}
                         </ul>
                       ) : (
-                        <p className="text-xs text-gray-500">No key points yet.</p>
+                        <p className="text-sm text-gray-500">No key points yet.</p>
                       )}
                     </div>
                   )}
@@ -1236,22 +1246,22 @@ export default function LecturePage() {
                     className="w-full px-4 py-3 flex items-center justify-between text-left"
                   >
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-900">Flashcards</h4>
-                      <p className="text-xs text-gray-500">Auto-generated study cards.</p>
+                      <h4 className="text-base font-semibold text-gray-900">Flashcards</h4>
+                      <p className="text-sm text-gray-500">Auto-generated study cards.</p>
                     </div>
-                    <span className="text-xs text-gray-600">{showFlashcardsTool ? 'Collapse' : 'Expand'}</span>
+                    <span className="text-sm text-gray-600">{showFlashcardsTool ? 'Collapse' : 'Expand'}</span>
                   </button>
                   {showFlashcardsTool && (
                     <div className="px-4 pb-4 space-y-3">
                       <button
                         onClick={handleGenerateFlashcards}
-                        className="w-full px-3 py-2 bg-primary-600 text-white rounded-lg text-xs font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg text-base font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={flashcardsLoading}
                       >
-                        {flashcardsLoading ? 'Generating...' : materials?.flashcards?.length ? 'Regenerate 10 Cards' : 'Generate 10 Cards'}
+                        {flashcardsLoading ? 'Generating...' : materials?.flashcards?.length ? 'Regenerate 5 Cards' : 'Generate 5 Cards'}
                       </button>
                       {loadingMaterials ? (
-                        <p className="text-xs text-gray-500">Loading...</p>
+                        <p className="text-sm text-gray-500">Loading...</p>
                       ) : (
                         <Flashcards flashcards={materials?.flashcards ?? []} />
                       )}
@@ -1271,7 +1281,7 @@ export default function LecturePage() {
                         </svg>
                       </div>
                       <h2 className="text-2xl font-bold text-gray-900 mb-2">Ask a Question</h2>
-                      <p className="text-gray-600">Start a conversation about this lecture</p>
+                      <p className="text-lg text-gray-600">Start a conversation about this lecture</p>
                     </div>
                   )}
 
@@ -1285,7 +1295,7 @@ export default function LecturePage() {
                           </svg>
                         </div>
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-900">{item.question}</p>
+                          <p className="text-base font-medium text-gray-900">{item.question}</p>
                         </div>
                       </div>
                       <div className="flex items-start space-x-3 ml-11">
@@ -1293,8 +1303,8 @@ export default function LecturePage() {
                           <span className="text-primary-600 font-bold text-sm">L</span>
                         </div>
                         <div className="flex-1">
-                          <div className="prose prose-sm max-w-none">
-                            <p className="text-gray-700 whitespace-pre-wrap">{item.answer}</p>
+                          <div className="prose prose-base max-w-none">
+                            <p className="text-base text-gray-700 whitespace-pre-wrap">{item.answer}</p>
                           </div>
                         </div>
                       </div>
@@ -1319,8 +1329,8 @@ export default function LecturePage() {
                           <span className="text-primary-600 font-bold text-sm">L</span>
                         </div>
                         <div className="flex-1">
-                          <div className="prose prose-sm max-w-none">
-                            <p className="text-gray-700 whitespace-pre-wrap">{currentAnswer.answer}</p>
+                          <div className="prose prose-base max-w-none">
+                            <p className="text-base text-gray-700 whitespace-pre-wrap">{currentAnswer.answer}</p>
                             {currentAnswer.citation && (
                               <p className="mt-2 text-sm text-primary-600 font-medium">
                                 {currentAnswer.citation}
@@ -1392,7 +1402,7 @@ export default function LecturePage() {
                           onChange={(e) => setQuestion(e.target.value)}
                           placeholder="Ask a question about this lecture..."
                           rows={1}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
+                          className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
                               e.preventDefault();
@@ -1401,14 +1411,14 @@ export default function LecturePage() {
                           }}
                           disabled={asking}
                         />
-                        <p className="mt-2 text-xs text-gray-500">
+                        <p className="mt-2 text-sm text-gray-500">
                           Ask questions about unclear concepts, examples, or exam-related topics.
                         </p>
                       </div>
                       <button
                         type="submit"
                         disabled={!question.trim() || asking}
-                        className="px-4 py-2.5 bg-primary-700 text-white rounded-lg text-sm font-semibold shadow-sm hover:bg-primary-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="px-4 py-2.5 bg-primary-700 text-white rounded-lg text-base font-semibold shadow-sm hover:bg-primary-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
                         Ask
                       </button>
@@ -1419,8 +1429,6 @@ export default function LecturePage() {
             </div>
           )}
         </div>
-      </div>
-
     </div>
   );
 }

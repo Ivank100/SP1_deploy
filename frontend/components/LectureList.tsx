@@ -71,8 +71,8 @@ export default function LectureList({
   if (lectures.length === 0) {
     return (
       <div className="text-center py-12 text-gray-500">
-        <p>No lectures uploaded yet.</p>
-        <p className="text-sm mt-2">Upload a PDF to get started.</p>
+        <p className="text-base">No lectures uploaded yet.</p>
+        <p className="text-base mt-2">Upload a PDF to get started.</p>
       </div>
     );
   }
@@ -103,10 +103,10 @@ export default function LectureList({
               </div>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate" title={lecture.original_name}>
+              <p className="text-base font-medium text-gray-900 truncate" title={lecture.original_name}>
                 {lecture.original_name}
               </p>
-              <p className="text-sm text-gray-500 truncate" title={lecture.original_name}>
+              <p className="text-base text-gray-500 truncate" title={lecture.original_name}>
                 {lecture.file_type === 'audio'
                   ? 'Audio lecture'
                   : lecture.file_type === 'slides'
@@ -115,11 +115,11 @@ export default function LectureList({
                 • {new Date(lecture.created_at).toLocaleDateString()}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700 uppercase whitespace-nowrap">
+                <span className="px-2 py-1 text-sm font-medium rounded-full bg-gray-100 text-gray-700 uppercase whitespace-nowrap">
                   {lecture.file_type}
                 </span>
                 <span
-                  className={`px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap ${getStatusColor(lecture.status)}`}
+                  className={`px-2 py-1 text-sm font-medium rounded-full whitespace-nowrap ${getStatusColor(lecture.status)}`}
                 >
                   {getStatusLabel(lecture.status)}
                 </span>
@@ -128,14 +128,14 @@ export default function LectureList({
                   if (!badge) return null;
                   return (
                     <span
-                      className={`px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap ${badge.className}`}
+                      className={`px-2 py-1 text-sm font-medium rounded-full whitespace-nowrap ${badge.className}`}
                     >
                       {badge.label}
                     </span>
                   );
                 })()}
                 {lecture.file_type === 'audio' && lecture.has_transcript && (
-                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-600 whitespace-nowrap">
+                  <span className="px-2 py-1 text-sm font-medium rounded-full bg-blue-50 text-blue-600 whitespace-nowrap">
                     transcript
                   </span>
                 )}
