@@ -384,7 +384,8 @@ export default function LecturePage() {
   const handleGenerateFlashcards = async () => {
     setFlashcardsLoading(true);
     try {
-      const response = await apiClient.generateFlashcards(lectureId);
+      const regenerate = (materials?.flashcards?.length ?? 0) > 0;
+      const response = await apiClient.generateFlashcards(lectureId, regenerate);
       setMaterials((prev) => ({
         lecture_id: lectureId,
         summary: prev?.summary ?? null,

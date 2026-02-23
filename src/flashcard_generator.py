@@ -11,36 +11,55 @@ import numpy as np
 from .deepseek_client import DeepSeekClient
 from .embedding_model import embed_texts
 from .db import (
+    get_lecture,
     get_lecture_study_materials,
     get_previous_flashcard_questions,
     get_chunks_for_lecture,
+    search_similar,
 )
+from .study_materials import generate_key_points as _generate_key_points
 
 
-# Hard limits
+# Hard limits - relaxed for better study cards
 MAX_QUESTION_WORDS = 25
-MAX_ANSWER_WORDS = 60  # Allow informative explanations (2-3 sentences)
+MAX_ANSWER_WORDS = 80  # Allow 2-4 sentences (was 60)
 CANDIDATE_COUNT = 12
 FINAL_COUNT = 5
 MAX_SIMILARITY_THRESHOLD = 0.90
 
-# Banned phrases
+# Banned phrases - allow "why" and "how" (good for learning), disallow vague prompts
 BANNED_QUESTION_PATTERNS = [
-    r'\bexplain\b',
-    r'\bdescribe\b',
+    r'\bexplain\s+(?:in\s+)?detail\b',
+    r'\bdescribe\s+(?:fully|in\s+detail)\b',
     r'\bdiscuss\b',
     r'\belaborate\b',
-    r'\bwhy\b',
     r'\bhow would you\b',
     r'\bwhat do you think\b',
     r'\bin your opinion\b',
     r'\bhow do you feel\b',
+    r'\bwrite about\b',
 ]
 
 VAGUE_ANSWER_PATTERNS = [
     r'\bvarious\b',
     r'\bseveral\b',
     r'\bit depends\b',
+]
+
+# Meta-references that defer teaching (reject)
+META_REFERENCE_PATTERNS = [
+    r'\breview\b',
+    r'\bsee\s+(?:the\s+)?lecture\b',
+    r'\bthe\s+material\b',
+    r'\bas\s+discussed\b',
+    r'\brefer\s+to\s+(?:the\s+)?(?:lecture|material)\b',
+]
+
+# Mechanism indicators (at least one required for informative answers)
+MECHANISM_INDICATORS = [
+    r'\bif\b', r'\bwhen\b', r'\bbecause\b', r'\brequires\b', r'\bcauses\b',
+    r'\buses\b', r'\bconsists\b', r'\bdefined\s+as\b', r'\bsuch\s+as\b',
+    r'\bfor\s+example\b', r'\be\.g\.\b', r'\blike\b',
 ]
 
 # Answer must not simply echo the question (e.g. Q: "What is X?" A: "X")
@@ -113,6 +132,20 @@ def validate_flashcard(question: str, answer: str) -> Tuple[bool, Optional[str]]
     if a_words > MAX_ANSWER_WORDS:
         return False, f"Answer has {a_words} words (max {MAX_ANSWER_WORDS})"
     
+    # Reject abstract-only answers (too short)
+    if a_words < 12:
+        return False, "Answer too short (< 12 words); must be informative"
+    
+    # Reject meta-references that defer teaching
+    if contains_banned_phrase(answer, META_REFERENCE_PATTERNS):
+        return False, "Answer must not refer to 'review', 'the material', 'lecture', or 'as discussed'"
+    
+    # Require mechanism-level content: at least one conditional/causal/process indicator or a number
+    has_mechanism = any(re.search(p, a_text.lower()) for p in MECHANISM_INDICATORS)
+    has_number = bool(re.search(r'\d+', a_text))
+    if not has_mechanism and not has_number:
+        return False, "Answer must explain how/why (e.g. 'when', 'because', 'requires', 'uses') or include concrete detail"
+    
     if contains_banned_phrase(question, BANNED_QUESTION_PATTERNS):
         return False, "Question contains banned phrase (explain, describe, etc.)"
     
@@ -147,14 +180,20 @@ def compute_quality_score(question: str, answer: str, keypoint_text: Optional[st
         if not question_lower.startswith('how do you feel'):
             score += 1.0
     
-    # Answer length: reward informative answers (10-50 words)
+    # Answer length: reward informative answers (20-45 words optimal)
     a_words = count_words(answer)
-    if 10 <= a_words <= 50:
+    if 20 <= a_words <= 45:
         score += 1.0
-    elif 6 <= a_words < 10:
-        score += 0.5  # Brief but not echo
+    elif 15 <= a_words < 20 or 45 < a_words <= 60:
+        score += 0.5
+    elif 10 <= a_words < 15:
+        score += 0.25
     
-    # Includes concrete term from keypoint (if provided)
+    # Causal/conditional language (mechanism-level)
+    if any(re.search(p, answer.lower()) for p in MECHANISM_INDICATORS):
+        score += 1.0
+    
+    # Lecture-specific keyword (from keypoint)
     if keypoint_text:
         keypoint_words = set(keypoint_text.lower().split())
         question_words = set(question.lower().split())
@@ -165,11 +204,15 @@ def compute_quality_score(question: str, answer: str, keypoint_text: Optional[st
     # Penalties
     if 'various' in answer.lower() or 'several' in answer.lower() or 'it depends' in answer.lower():
         score -= 2.0
-    
-    # Multi-concept penalty (contains "and" in question)
-    if ' and ' in question.lower():
+    if any(x in answer.lower() for x in ('review', 'material', 'details')):
         score -= 2.0
-    
+
+    # Multi-concept penalty - only if clearly multiple independent targets
+    and_count = question.lower().count(' and ')
+    comma_count = question.count(',')
+    if and_count >= 2 and comma_count >= 1:
+        score -= 1.0  # Likely multi-concept; reduced penalty
+
     return score
 
 
@@ -407,20 +450,51 @@ def _parse_flashcard_candidates(
     return candidates
 
 
+def _get_chunks_per_keypoint(
+    lecture_id: int,
+    key_points: List[str],
+    chunks_per_kp: int = 2,
+) -> Dict[int, List[str]]:
+    """
+    Retrieve top relevant chunks for each key point via vector search.
+    Returns {keypoint_index_1based: [chunk_text, ...]}.
+    """
+    if not key_points:
+        return {}
+    embeddings = embed_texts(key_points)
+    result: Dict[int, List[str]] = {}
+    for i, (kp, emb) in enumerate(zip(key_points, embeddings)):
+        rows = search_similar(emb, top_k=chunks_per_kp, lecture_id=lecture_id)
+        texts = [row[0] for row in rows if row[0]]
+        if texts:
+            result[i + 1] = texts
+    return result
+
+
 def generate_flashcard_candidates(
     key_points: List[str],
     existing_questions: List[str],
     strategy: str = "keypoints_v1",
     candidate_count: int = CANDIDATE_COUNT,
+    chunks_per_keypoint: Optional[Dict[int, List[str]]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Generate flashcard candidates using LLM.
     Returns list of candidate dicts with question, answer, keypoint_index.
+    When chunks_per_keypoint is provided, answers are grounded in those excerpts.
     """
     client = DeepSeekClient()
     
-    # Format key points for prompt
-    key_points_text = "\n".join(f"{i+1}) {kp}" for i, kp in enumerate(key_points))
+    # Format key points for prompt (with optional context excerpts)
+    parts = []
+    for i, kp in enumerate(key_points):
+        idx = i + 1
+        parts.append(f"{idx}) {kp}")
+        if chunks_per_keypoint and idx in chunks_per_keypoint:
+            excerpts = chunks_per_keypoint[idx]
+            for j, ex in enumerate(excerpts[:2], 1):
+                parts.append(f"   Context {j}: {ex[:500]}{'...' if len(ex) > 500 else ''}")
+    key_points_text = "\n".join(parts)
     
     # Format existing questions
     existing_questions_text = ""
@@ -441,17 +515,26 @@ Hard rules:
 - Generate exactly N flashcard candidates (not final selection).
 - Each flashcard has: question, answer, keypoint_index.
 - Questions must be <= 25 words.
-- Answers must be INFORMATIVE: 2-4 sentences that explain or define the concept clearly.
-  NEVER give an answer that just repeats the question (e.g. Q: "What is X?" A: "X" is wrong).
-  Answers must ADD VALUE: include definition, purpose, example, or key details from the lecture.
-- Avoid vague prompts: "explain", "discuss", "describe", "why", "write about".
+- Each answer MUST:
+  • Clearly define the concept.
+  • Explain how it works or why it matters.
+  • Use specific terminology from the lecture.
+  • Be 15–60 words.
+  • Contain at least one concrete detail (condition, rule, step, formula, example, or constraint).
+  • NEVER refer to "the lecture", "the material", or "review".
+- Answers must be self-contained and useful for revision without seeing the original lecture.
+- Avoid vague prompts: "explain in detail", "discuss", "describe fully", "write about".
 - Each flashcard must test ONE concept.
 - No citations, no page numbers, no timestamps."""
     
+    grounding_instruction = ""
+    if chunks_per_keypoint:
+        grounding_instruction = "\n\nBase each answer STRICTLY on the provided context excerpts. Do not invent details not present in the excerpts."
+    
     user_prompt = f"""Create {candidate_count} flashcard CANDIDATES from these key points.
 
-Key points (indexed):
-{key_points_text}{existing_questions_text}{focus_instruction}
+Key points (with context excerpts when provided):
+{key_points_text}{existing_questions_text}{grounding_instruction}{focus_instruction}
 
 Return JSON array:
 [
@@ -469,12 +552,12 @@ Return JSON array:
     if not candidates:
         fallback_prompt = f"""Create {candidate_count} flashcards using this format only:
 Q: <question>
-A: <informative answer - must explain or define the concept, never just repeat the question>
+A: <informative answer - 15-60 words, define the concept, explain how/why, use lecture terminology, include at least one concrete detail>
 
 Use these key points:
 {key_points_text}
 
-Each answer must ADD VALUE: define the term, explain its purpose, or give key details. Never answer "What is X?" with just "X".
+Each answer must: define the concept, explain how it works or why it matters, use specific terms, include a concrete detail. Never say "review the material" or "see the lecture".
 Return ONLY Q/A lines, no JSON, no markdown."""
         fallback_messages = [
             {"role": "system", "content": "You create flashcards from key points."},
@@ -491,12 +574,20 @@ def fill_missing_flashcards(
     key_points: List[str],
     already_selected: List[Dict[str, Any]],
     missing_count: int,
+    chunks_per_keypoint: Optional[Dict[int, List[str]]] = None,
 ) -> List[Dict[str, Any]]:
     """Generate additional flashcards to fill missing slots."""
     client = DeepSeekClient()
     
     existing_questions = [c.get("question", "") for c in already_selected]
-    key_points_text = "\n".join(f"{i+1}) {kp}" for i, kp in enumerate(key_points))
+    parts = []
+    for i, kp in enumerate(key_points):
+        idx = i + 1
+        parts.append(f"{idx}) {kp}")
+        if chunks_per_keypoint and idx in chunks_per_keypoint:
+            for j, ex in enumerate(chunks_per_keypoint[idx][:2], 1):
+                parts.append(f"   Context {j}: {ex[:500]}{'...' if len(ex) > 500 else ''}")
+    key_points_text = "\n".join(parts)
     existing_questions_text = "\n".join(f"- {q}" for q in existing_questions)
     
     system_prompt = """You generate study flashcards.
@@ -505,10 +596,15 @@ Hard rules:
 - Return JSON only. No markdown.
 - Each flashcard has: question, answer, keypoint_index.
 - Questions must be <= 25 words.
-- Answers must be INFORMATIVE: explain or define the concept clearly in 2-4 sentences.
-  NEVER just repeat the question (e.g. Q: "What is X?" A: "X" is wrong).
-  Include definition, purpose, or key details.
-- Avoid vague prompts: "explain", "discuss", "describe", "why"."""
+- Each answer MUST:
+  • Clearly define the concept.
+  • Explain how it works or why it matters.
+  • Use specific terminology from the lecture.
+  • Be 15–60 words.
+  • Contain at least one concrete detail (condition, rule, step, formula, example, or constraint).
+  • NEVER refer to "the lecture", "the material", or "review".
+- Answers must be self-contained and useful for revision without seeing the original lecture.
+- Avoid vague prompts: "explain in detail", "discuss", "describe fully"."""
     
     user_prompt = f"""You must generate {missing_count} additional flashcards.
 
@@ -517,6 +613,7 @@ Do NOT repeat or paraphrase any of these questions:
 
 Use these key points:
 {key_points_text}
+""" + ("\nBase each answer STRICTLY on the provided context excerpts." if chunks_per_keypoint else "") + """
 
 Return JSON array only."""
     
@@ -530,12 +627,12 @@ Return JSON array only."""
     if not candidates:
         fallback_prompt = f"""Create {missing_count} additional flashcards using this format only:
 Q: <question>
-A: <informative answer - explain or define the concept, never just repeat the question>
+A: <informative answer - 15-60 words, define the concept, explain how/why, use lecture terminology, include at least one concrete detail>
 
 Use these key points:
 {key_points_text}
 
-Each answer must explain the concept clearly. Never answer "What is X?" with just "X".
+Each answer must: define the concept, explain how it works or why it matters, use specific terms, include a concrete detail. Never say "review the material" or "see the lecture".
 Return ONLY Q/A lines, no JSON, no markdown."""
         fallback_messages = [
             {"role": "system", "content": "You create flashcards from key points."},
@@ -548,6 +645,93 @@ Return ONLY Q/A lines, no JSON, no markdown."""
     return candidates
 
 
+def _prepare_context_for_chunks(lecture_id: int):
+    """Get chunks for lecture (reuse study_materials logic)."""
+    chunks = get_chunks_for_lecture(lecture_id, limit=60)
+    if not chunks:
+        raise ValueError("No chunks found for lecture")
+    return chunks
+
+
+def _generate_flashcards_from_chunks(
+    lecture_id: int,
+    chunks: List[Tuple[str, Optional[int], Optional[float], Optional[float]]],
+    existing_questions: List[str],
+) -> List[Dict[str, Any]]:
+    """
+    Fallback: generate flashcards directly from chunks when key points are missing.
+    Selects 5-8 chunks spread across the lecture and creates grounded flashcards.
+    """
+    if not chunks or len(chunks) < 3:
+        raise ValueError("Not enough chunks for flashcard generation")
+
+    # Select up to 8 chunks spread across the lecture
+    n = min(8, len(chunks))
+    step = max(1, (len(chunks) - 1) // (n - 1)) if n > 1 else 0
+    selected_indices = [i * step for i in range(n)] if step > 0 else list(range(n))
+    selected_indices = [min(i, len(chunks) - 1) for i in selected_indices]
+
+    context_parts = []
+    chunk_refs = []
+    for idx in selected_indices:
+        text, page, ts_start, ts_end = chunks[idx]
+        ref = f"[Page {page}]" if page else (f"[Time {ts_start}-{ts_end}]" if ts_start and ts_end else "[Chunk]")
+        context_parts.append(f"{ref} {text.strip()}")
+        chunk_refs.append(ref)
+
+    context = "\n\n".join(context_parts)
+    client = DeepSeekClient()
+
+    existing_text = ""
+    if existing_questions:
+        existing_text = "\n\nAvoid repeating: " + "; ".join(existing_questions[:5])
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You create study flashcards from lecture excerpts. Each answer must: "
+                "define the concept, explain how it works or why it matters, use specific terminology, "
+                "be 15-60 words, include at least one concrete detail. "
+                "Never refer to 'the lecture', 'the material', or 'review'. Base answers strictly on the context."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Create 5 flashcards from this lecture context. Base each answer strictly on the excerpts. "
+                f"Each answer: define the concept, explain how/why, use lecture terms, include a concrete detail (15-60 words). "
+                f"Return JSON array: [{{\"question\":\"...\", \"answer\":\"...\", \"source_ref\":\"Page 3\"}}]. "
+                f"Use source_ref from context markers (e.g. [Page N] or [Time MM:SS]).{existing_text}\n\nContext:\n{context}\n\nJSON array:"
+            ),
+        },
+    ]
+    response = client.chat(messages, temperature=0.5, max_tokens=400).strip()
+    response = re.sub(r"^```(?:json)?\s*", "", response)
+    response = re.sub(r"\s*```\s*$", "", response).strip()
+
+    candidates = []
+    try:
+        parsed = json.loads(response)
+        if isinstance(parsed, list):
+            for i, item in enumerate(parsed[:5]):
+                if isinstance(item, dict):
+                    q = item.get("question") or item.get("front") or ""
+                    a = item.get("answer") or item.get("back") or ""
+                    ref = item.get("source_ref") or (chunk_refs[i % len(chunk_refs)] if chunk_refs else None)
+                    if q and a:
+                        candidates.append({
+                            "question": str(q).strip(),
+                            "answer": str(a).strip(),
+                            "keypoint_index": None,
+                            "source_ref": ref,
+                        })
+    except json.JSONDecodeError:
+        pass
+
+    return candidates
+
+
 def generate_flashcards_v2(
     lecture_id: int,
     user_id: Optional[int] = None,
@@ -557,28 +741,53 @@ def generate_flashcards_v2(
     """
     Main flashcard generation pipeline.
     Returns list of 5 validated flashcards.
+    Auto-generates key points if missing; falls back to chunks if key points fail.
     """
-    # 1. Fetch keypoints
+    # 0. Ensure lecture is ready
+    lecture = get_lecture(lecture_id)
+    if not lecture:
+        raise ValueError(f"Lecture {lecture_id} not found")
+    if lecture[4] != "completed":
+        raise ValueError(f"Lecture not ready for study materials (status: {lecture[4]})")
+
+    # 1. Fetch or generate keypoints
     key_points = _get_lecture_key_points(lecture_id)
     if not key_points or len(key_points) < 3:
-        raise ValueError(
-            f"Need at least 3 key points for flashcard generation. "
-            f"Found {len(key_points) if key_points else 0}."
-        )
-    
+        try:
+            _generate_key_points(lecture_id)
+            key_points = _get_lecture_key_points(lecture_id)
+        except Exception:
+            pass
+
+    use_chunks_fallback = not key_points or len(key_points) < 3
+
     # 2. Fetch prior flashcards if regenerating
     existing_questions = []
     if regenerate:
         existing_questions = get_previous_flashcard_questions(lecture_id, limit_sets=3)
-    
-    # 3. Generate candidates
-    candidates = generate_flashcard_candidates(
-        key_points,
-        existing_questions,
-        strategy=strategy,
-        candidate_count=CANDIDATE_COUNT,
-    )
-    
+
+    # 3. Build chunks per key point for grounding (when using key points)
+    chunks_per_keypoint: Optional[Dict[int, List[str]]] = None
+    if not use_chunks_fallback and key_points:
+        try:
+            chunks_per_keypoint = _get_chunks_per_keypoint(lecture_id, key_points, chunks_per_kp=2)
+        except Exception:
+            chunks_per_keypoint = None
+
+    # 4. Generate candidates
+    if use_chunks_fallback:
+        chunks = _prepare_context_for_chunks(lecture_id)
+        candidates = _generate_flashcards_from_chunks(lecture_id, chunks, existing_questions)
+        key_points = []  # No key points for selection logic
+    else:
+        candidates = generate_flashcard_candidates(
+            key_points,
+            existing_questions,
+            strategy=strategy,
+            candidate_count=CANDIDATE_COUNT,
+            chunks_per_keypoint=chunks_per_keypoint,
+        )
+
     if not candidates:
         raise ValueError("No candidates generated by LLM")
     
@@ -590,9 +799,8 @@ def generate_flashcards_v2(
             candidate.get("answer", ""),
         )
         if is_valid:
-            # Add quality score
             kp_idx = candidate.get("keypoint_index")
-            kp_text = key_points[kp_idx - 1] if kp_idx and 1 <= kp_idx <= len(key_points) else None
+            kp_text = key_points[kp_idx - 1] if key_points and kp_idx and 1 <= kp_idx <= len(key_points) else None
             candidate["quality_score"] = compute_quality_score(
                 candidate["question"],
                 candidate["answer"],
@@ -608,21 +816,22 @@ def generate_flashcards_v2(
     deduplicated = deduplicate_candidates(validated, existing_questions, embedding_func)
     
     # 6. Select best 5 with coverage
-    max_per_keypoint = 2 if len(key_points) >= 5 else 3
+    max_per_keypoint = 2 if key_points and len(key_points) >= 5 else 3
     selected = select_final_flashcards(
         deduplicated,
         target_count=FINAL_COUNT,
         max_per_keypoint=max_per_keypoint,
     )
     
-    # 7. Fill missing if needed
-    if len(selected) < FINAL_COUNT:
+    # 7. Fill missing if needed (only when using key points)
+    if len(selected) < FINAL_COUNT and key_points:
         missing_count = FINAL_COUNT - len(selected)
         try:
             additional = fill_missing_flashcards(
                 key_points,
                 selected,
                 missing_count,
+                chunks_per_keypoint=chunks_per_keypoint,
             )
             # Validate and add
             for candidate in additional:
@@ -645,8 +854,8 @@ def generate_flashcards_v2(
             # If fill fails, just return what we have
             pass
     
-    # 8. Deterministic fallback from key points (guarantee minimum coverage)
-    if len(selected) < FINAL_COUNT:
+    # 8. Deterministic fallback from key points (guarantee minimum coverage, only when key points exist)
+    if len(selected) < FINAL_COUNT and key_points:
         remaining = FINAL_COUNT - len(selected)
         normalized_existing = {normalize_text(q) for q in existing_questions}
         normalized_existing.update(normalize_text(c.get("question", "")) for c in selected)
@@ -685,12 +894,15 @@ def generate_flashcards_v2(
     # Ensure we return exactly FINAL_COUNT (or as many as possible)
     final = selected[:FINAL_COUNT]
     
-    # Add source_keypoint_id (1-indexed in prompt, 0-indexed in list)
+    # Add source_keypoint_id and provenance (1-indexed in prompt, 0-indexed in list)
     for card in final:
         kp_idx = card.get("keypoint_index")
-        if kp_idx and 1 <= kp_idx <= len(key_points):
+        if kp_idx and key_points and 1 <= kp_idx <= len(key_points):
             card["source_keypoint_id"] = kp_idx - 1  # 0-indexed for storage
-    
+        # Store source_ref as source_chunk_ids for provenance (chunks fallback)
+        if card.get("source_ref"):
+            card["source_chunk_ids"] = [card["source_ref"]]
+
     return final
 
 
@@ -699,21 +911,32 @@ def _expand_keypoint_to_answer(keypoint: str, question: str) -> str:
     try:
         client = DeepSeekClient()
         messages = [
-            {"role": "system", "content": "You provide brief, informative definitions for study flashcards. Give a clear explanation in 2-3 sentences. Never just repeat the question or term."},
-            {"role": "user", "content": f"Key point: {keypoint}\n\nQuestion: {question}\n\nProvide a clear, informative answer (2-3 sentences) that explains this concept:"},
+            {
+                "role": "system",
+                "content": (
+                    "You provide informative definitions for study flashcards. "
+                    "Each answer must: define the concept, explain how it works or why it matters, "
+                    "use specific terminology, include at least one concrete detail. "
+                    "Be 15-60 words. Never refer to 'the lecture', 'the material', or 'review'."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Key point: {keypoint}\n\nQuestion: {question}\n\nProvide a clear, informative answer (15-60 words) that defines the concept and explains how/why it matters:",
+            },
         ]
         response = client.chat(messages, temperature=0.3).strip()
         if response and not answer_echoes_question(question, response):
             return response[:500]
         # LLM returned echo, try minimal expansion
-        messages[1]["content"] = f"Define or explain: {keypoint}. One sentence only."
+        messages[1]["content"] = f"Define {keypoint} in 15-40 words. Include how it works or an example. Never say 'review the material'."
         response = client.chat(messages, temperature=0.2).strip()
         if response and not answer_echoes_question(question, response):
             return response[:400]
     except Exception:
         pass
-    # Last resort: prepend a minimal explanation to keypoint
-    return f"A core concept in the lecture: {keypoint}. Review the material for full details."
+    # Last resort: raise so caller skips this card (avoids low-quality meta-answers)
+    raise ValueError("Cannot generate informative answer from keypoint alone")
 
 
 def _get_lecture_key_points(lecture_id: int) -> List[str]:

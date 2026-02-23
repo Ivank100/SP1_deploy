@@ -58,6 +58,44 @@ def _is_valid_keypoint(text: str) -> bool:
     return True
 
 
+def _fallback_keypoints_repair(context: str) -> List[str]:
+    """
+    When JSON parsing fails, use LLM repair prompt instead of random sentence truncation.
+    Produces higher quality key points than the old fallback.
+    """
+    client = DeepSeekClient()
+    messages = [
+        {"role": "system", "content": "You extract study-relevant key points from lecture text. Output ONLY a JSON array of strings. Each item: noun phrase or short concept (3-10 words). No full sentences."},
+        {"role": "user", "content": (
+            "Extract 5-8 key points from this lecture context. "
+            "Return ONLY a JSON array of strings, e.g. [\"concept A\", \"concept B\"].\n\n"
+            f"Context:\n{context[:8000]}\n\nJSON array:"
+        )},
+    ]
+    response = client.chat(messages, max_tokens=303, temperature=0.2).strip()
+    response = re.sub(r"^```(?:json)?\s*", "", response)
+    response = re.sub(r"\s*```\s*$", "", response).strip()
+    try:
+        parsed = json.loads(response)
+        if isinstance(parsed, list):
+            points = [str(p).strip() for p in parsed if _is_valid_keypoint(str(p).strip())]
+            return points[:8] if points else []
+    except json.JSONDecodeError:
+        pass
+    # Last resort: extract capitalized terms and frequent phrases (deterministic)
+    words = re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b", context)
+    seen = set()
+    result = []
+    for w in words:
+        w = w.strip()
+        if len(w.split()) >= 2 and len(w.split()) <= 8 and w.lower() not in seen:
+            seen.add(w.lower())
+            result.append(w)
+            if len(result) >= 6:
+                break
+    return result[:6]
+
+
 def _chunk_reference(page: Optional[int], ts_start: Optional[float], ts_end: Optional[float]) -> str:
     if page is not None:
         return f"[Page {page}]"
@@ -71,12 +109,31 @@ def _chunk_reference(page: Optional[int], ts_start: Optional[float], ts_end: Opt
     return "[Chunk]"
 
 
+def _stratified_sample_chunks(
+    chunks: List[Tuple[str, Optional[int], Optional[float], Optional[float]]],
+    limit: int,
+) -> List[Tuple[str, Optional[int], Optional[float], Optional[float]]]:
+    """
+    Sample chunks evenly across the lecture (early, mid, late) to avoid bias toward first 40.
+    """
+    if len(chunks) <= limit or limit <= 1:
+        return chunks[:limit] if limit else chunks
+    n = len(chunks)
+    indices = []
+    for i in range(limit):
+        pos = int((i / (limit - 1)) * (n - 1))
+        indices.append(min(pos, n - 1))
+    return [chunks[i] for i in sorted(set(indices))]
+
+
 def _prepare_context(
     lecture_id: int,
 ) -> Tuple[str, List[Tuple[str, Optional[int], Optional[float], Optional[float]]]]:
-    chunks = get_chunks_for_lecture(lecture_id, limit=MAX_CONTEXT_CHUNKS)
-    if not chunks:
+    # Fetch more chunks, then stratify to cover early/mid/late lecture
+    all_chunks = get_chunks_for_lecture(lecture_id, limit=80)
+    if not all_chunks:
         raise ValueError("No chunks found for lecture")
+    chunks = _stratified_sample_chunks(all_chunks, MAX_CONTEXT_CHUNKS)
     context_lines = [
         f"{_chunk_reference(page, ts_start, ts_end)} {text.strip()}"
         for text, page, ts_start, ts_end in chunks
@@ -180,10 +237,10 @@ def generate_key_points(lecture_id: int) -> List[str]:
                 "Output ONLY a JSON array of strings.\n"
                 "Return 5-8 key points.\n"
                 "Each key point must be a noun phrase (no full sentences).\n"
-                "3-8 words each, no ending period.\n"
-                "No verbs like includes / involves / manages.\n"
+                "Up to 10 words each; allow structured phrases like 'Safe state condition in Banker's algorithm'.\n"
+                "No ending period. No verbs like includes / involves / manages.\n"
                 "No punctuation except / and -.\n"
-                "Use lecture terminology only.\n\n"
+                "Use lecture terminology only. Preserve conceptual anchors (e.g. 'Deadlock necessary conditions', 'Reusable vs consumable resources').\n\n"
                 f"Context:\n{context}\n\nJSON array:"
             ),
         },
@@ -212,33 +269,20 @@ def generate_key_points(lecture_id: int) -> List[str]:
         cleaned_points = []
         for point in key_points:
             cleaned = re.sub(r"^\s*\d+\.\s*", "", point).strip()
-            cleaned = re.sub(r"[.]", "", cleaned)
-            cleaned = re.sub(r"\b(includes|involves|manages|covers|describes)\b.*", "", cleaned).strip()
+            cleaned = re.sub(r"[.]$", "", cleaned)  # Only trailing period
+            # Reject items that START with weak verbs (don't truncate - that destroys meaning)
+            lower = cleaned.lower()
+            if re.match(r"^\s*(includes|involves|manages|covers|describes)\b", lower):
+                continue
             words = cleaned.split()
-            if len(words) > 8:
-                cleaned = " ".join(words[:8])
+            if len(words) > 10:
+                cleaned = " ".join(words[:10])  # Allow slightly longer
             if cleaned and _is_valid_keypoint(cleaned):
                 cleaned_points.append(cleaned)
         key_points = cleaned_points[:8]
     if not key_points:
-        # Fallback: derive concise points from context when model response is unusable
-        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", context.strip()) if s.strip()]
-        random.shuffle(sentences)
-        fallback_points = []
-        for sentence in sentences:
-            cleaned = re.sub(r"\s+", " ", sentence).strip()
-            if not cleaned:
-                continue
-            cleaned = re.sub(r"[.]", "", cleaned)
-            cleaned = re.sub(r"\b(includes|involves|manages|covers|describes)\b.*", "", cleaned).strip()
-            words = cleaned.split()
-            if len(words) > 8:
-                cleaned = " ".join(words[:8])
-            if cleaned:
-                fallback_points.append(cleaned)
-            if len(fallback_points) >= 6:
-                break
-        key_points = fallback_points[:6]
+        # Better fallback: LLM repair prompt instead of random sentence truncation
+        key_points = _fallback_keypoints_repair(context)
     if not key_points:
         raise ValueError("Could not extract key points from model response")
     save_lecture_key_points(lecture_id, key_points)
