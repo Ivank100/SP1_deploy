@@ -127,12 +127,17 @@ async def generate_flashcards_endpoint(
         )
     
     try:
+        # Infer regenerate if lecture already has flashcard sets (defense in depth)
+        regenerate = request.regenerate
+        if not regenerate and get_latest_flashcard_set(lecture_id):
+            regenerate = True
+
         # Generate flashcards using new pipeline
         flashcard_data = generate_flashcards_v2(
             lecture_id,
             user_id=current_user["id"],
             strategy=request.strategy,
-            regenerate=request.regenerate,
+            regenerate=regenerate,
         )
         
         # Create a new flashcard set
