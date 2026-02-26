@@ -1,5 +1,6 @@
 # src/api/routes/lectures.py
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
+from fastapi.responses import FileResponse
 from typing import List, Optional
 import os
 from pathlib import Path
@@ -217,6 +218,44 @@ async def get_lecture_by_id(
         created_by=lecture[9],
         created_by_role=lecture[10],
     )
+
+
+@router.get("/{lecture_id}/download")
+async def download_lecture_file(
+    lecture_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """Stream lecture file for download with Content-Disposition: attachment."""
+    lecture = get_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Lecture with id {lecture_id} not found",
+        )
+    if not can_user_access_lecture(current_user["id"], lecture_id, current_user["role"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this lecture",
+        )
+    file_path = lecture[2]
+    original_name = lecture[1] or "lecture"
+    if not file_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No file associated with this lecture",
+        )
+    full_path = Path(file_path).resolve()
+    if not full_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found on server",
+        )
+    return FileResponse(
+        path=str(full_path),
+        filename=original_name,
+        media_type="application/octet-stream",
+    )
+
 
 @router.get("/{lecture_id}/status", response_model=dict)
 async def get_lecture_status(lecture_id: int):

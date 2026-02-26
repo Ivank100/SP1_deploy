@@ -327,9 +327,33 @@ function CourseAnalyticsOverview({ courseId }: { courseId: number }) {
   const visibleTopics = showAllTopics ? topics : topics.slice(0, 2);
   const remainingTopicCount = Math.max(0, topics.length - visibleTopics.length);
 
+  const handleExportQuestions = async () => {
+    try {
+      const blob = await apiClient.exportCourseQuestions(courseId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `course_${courseId}_questions.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      alert(error.response?.data?.detail || 'Failed to export questions');
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h3 className="text-xl font-semibold text-gray-900 mb-6">Course Analytics Overview</h3>
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-xl font-semibold text-gray-900">Course Analytics Overview</h3>
+        <button
+          onClick={handleExportQuestions}
+          className="text-base text-gray-500 hover:text-gray-700"
+        >
+          Export Questions CSV
+        </button>
+      </div>
       
       <div className="mb-6">
         <p className="text-base text-gray-600 mb-4">How are students interacting with this course?</p>
@@ -998,22 +1022,6 @@ export default function CourseDetailPage() {
       setAnnouncementError({ ...announcementError, [courseId]: error.response?.data?.detail || 'Failed to post announcement' });
     } finally {
       setPostingAnnouncement({ ...postingAnnouncement, [courseId]: false });
-    }
-  };
-
-  const handleExportQuestions = async (courseId: number) => {
-    try {
-      const blob = await apiClient.exportCourseQuestions(courseId);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `course_${courseId}_questions.csv`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to export questions');
     }
   };
 
@@ -2070,15 +2078,6 @@ export default function CourseDetailPage() {
                   </button>
                   {!collapseInstructorAnnouncements[course.id] && (
                     <div className="px-6 pb-6">
-                      <div className="flex items-center justify-between mb-2">
-                        <div />
-                        <button
-                          onClick={() => handleExportQuestions(course.id)}
-                          className="text-base text-gray-500 hover:text-gray-700"
-                        >
-                          Export Questions CSV
-                        </button>
-                      </div>
                       <p className="text-base text-gray-500 mb-3">
                         Use announcements to clarify confusing topics or post updates.
                       </p>
