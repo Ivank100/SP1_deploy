@@ -663,14 +663,21 @@ export const apiClient = {
     return response.data;
   },
 
-  async generateFlashcards(lectureId: number, regenerate: boolean = false): Promise<FlashcardListResponse> {
-    if (regenerate) {
-      const response = await api.post<FlashcardListResponse>(`/api/lectures/${lectureId}/flashcards/regenerate`);
-      return response.data;
-    } else {
-      const response = await api.post<FlashcardListResponse>(`/api/lectures/${lectureId}/flashcards/generate`);
-      return response.data;
-    }
+  /** Flashcard count range - keep in sync with backend FLASHCARD_COUNT_MIN/MAX */
+  FLASHCARD_COUNT_MIN: 1,
+  FLASHCARD_COUNT_MAX: 5,
+
+  async generateFlashcards(
+    lectureId: number,
+    regenerate: boolean = false,
+    count: number = 5,
+  ): Promise<FlashcardListResponse> {
+    const body = { count, regenerate };
+    const endpoint = regenerate
+      ? `/api/lectures/${lectureId}/flashcards/regenerate`
+      : `/api/lectures/${lectureId}/flashcards/generate`;
+    const response = await api.post<FlashcardListResponse>(endpoint, body);
+    return response.data;
   },
 
   async getLatestFlashcards(lectureId: number): Promise<FlashcardListResponse> {

@@ -48,6 +48,10 @@ PG_DIM = int(os.getenv("PGVECTOR_DIM", "1536"))
 # File storage
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 
+# Flashcard count range (user-selectable) - easy to modify
+FLASHCARD_COUNT_MIN = 1
+FLASHCARD_COUNT_MAX = 5
+
 # JWT Authentication - REQUIRED (no defaults for security)
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 if not JWT_SECRET_KEY:

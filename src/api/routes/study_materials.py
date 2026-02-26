@@ -138,6 +138,7 @@ async def generate_flashcards_endpoint(
             user_id=current_user["id"],
             strategy=request.strategy,
             regenerate=regenerate,
+            target_count=request.count,
         )
         
         # Create a new flashcard set
