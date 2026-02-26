@@ -1,7 +1,10 @@
 # src/api/models.py
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+# Import range from config (single source of truth)
+from ..config import FLASHCARD_COUNT_MIN, FLASHCARD_COUNT_MAX
 
 class LectureResponse(BaseModel):
     """Response model for lecture data."""
@@ -162,9 +165,16 @@ class FlashcardListResponse(BaseModel):
 
 class FlashcardGenerateRequest(BaseModel):
     """Request for generating flashcards."""
-    count: int = 10
+    count: int = 5
     regenerate: bool = False
     strategy: str = "keypoints_v1"
+
+    @field_validator("count")
+    @classmethod
+    def count_in_range(cls, v: int) -> int:
+        if not (FLASHCARD_COUNT_MIN <= v <= FLASHCARD_COUNT_MAX):
+            raise ValueError(f"count must be between {FLASHCARD_COUNT_MIN} and {FLASHCARD_COUNT_MAX}")
+        return v
 
 class StudyMaterialsResponse(BaseModel):
     """Aggregated study materials for a lecture."""

@@ -18,13 +18,15 @@ from .db import (
     search_similar,
 )
 from .study_materials import generate_key_points as _generate_key_points
+from .config import FLASHCARD_COUNT_MIN, FLASHCARD_COUNT_MAX
 
 
 # Hard limits - relaxed for better study cards
 MAX_QUESTION_WORDS = 25
 MAX_ANSWER_WORDS = 80  # Allow 2-4 sentences (was 60)
-CANDIDATE_COUNT = 12
-FINAL_COUNT = 5
+CANDIDATE_COUNT = 24
+# Default flashcard count (when not specified)
+FINAL_COUNT_DEFAULT = FLASHCARD_COUNT_MAX
 MAX_SIMILARITY_THRESHOLD = 0.90
 
 # Banned phrases - allow "why" and "how" (good for learning), disallow vague prompts
@@ -60,6 +62,10 @@ MECHANISM_INDICATORS = [
     r'\bif\b', r'\bwhen\b', r'\bbecause\b', r'\brequires\b', r'\bcauses\b',
     r'\buses\b', r'\bconsists\b', r'\bdefined\s+as\b', r'\bsuch\s+as\b',
     r'\bfor\s+example\b', r'\be\.g\.\b', r'\blike\b',
+    r'\bhas\b', r'\bhave\b', r'\bincludes\b', r'\bcontains\b', r'\bmeans\b',
+    r'\brefers\s+to\b', r'\ballows\b', r'\bensures\b',
+    r'\bdescribes\b', r'\bused\s+in\b', r'\bused\s+for\b', r'\bapplied\b',
+    r'\bprovides\b', r'\benables\b', r'\bworks\b', r'\boperates\b',
 ]
 
 # Answer must not simply echo the question (e.g. Q: "What is X?" A: "X")
@@ -133,8 +139,8 @@ def validate_flashcard(question: str, answer: str) -> Tuple[bool, Optional[str]]
         return False, f"Answer has {a_words} words (max {MAX_ANSWER_WORDS})"
     
     # Reject abstract-only answers (too short)
-    if a_words < 12:
-        return False, "Answer too short (< 12 words); must be informative"
+    if a_words < 8:
+        return False, "Answer too short (< 8 words); must be informative"
     
     # Reject meta-references that defer teaching
     if contains_banned_phrase(answer, META_REFERENCE_PATTERNS):
@@ -164,6 +170,31 @@ def validate_flashcard(question: str, answer: str) -> Tuple[bool, Optional[str]]
         return False, "Answer must explain the concept, not just repeat the question"
 
     return True, None
+
+
+def validate_flashcard_lenient(question: str, answer: str) -> bool:
+    """
+    Lenient validation for fallback when strict validation yields no cards.
+    Only rejects obviously bad cards (meta-refs, echo, too short, placeholder).
+    """
+    q_text = (question or "").strip()
+    a_text = (answer or "").strip()
+    if count_words(q_text) < 2 or count_words(a_text) < 6:
+        return False
+    if not re.search(r"[a-zA-Z0-9]", q_text) or not re.search(r"[a-zA-Z0-9]", a_text):
+        return False
+    if contains_banned_phrase(answer, META_REFERENCE_PATTERNS):
+        return False
+    if answer_echoes_question(question, answer):
+        return False
+    if q_text.lower().startswith(('{', '[')) or a_text.lower().startswith(('{', '[')):
+        return False
+    q_clean = re.sub(r'[^a-z0-9_]+', '', q_text.lower())
+    a_clean = re.sub(r'[^a-z0-9_]+', '', a_text.lower())
+    banned = {"question", "answer", "keypoint_index", "keypointindex"}
+    if q_clean in banned or a_clean in banned:
+        return False
+    return True
 
 
 def compute_quality_score(question: str, answer: str, keypoint_text: Optional[str] = None) -> float:
@@ -294,7 +325,7 @@ def deduplicate_candidates(
 
 def select_final_flashcards(
     candidates: List[Dict[str, Any]],
-    target_count: int = FINAL_COUNT,
+    target_count: int = FINAL_COUNT_DEFAULT,
     max_per_keypoint: int = 2,
 ) -> List[Dict[str, Any]]:
     """
@@ -699,14 +730,14 @@ def _generate_flashcards_from_chunks(
         {
             "role": "user",
             "content": (
-                f"Create 5 flashcards from this lecture context. Base each answer strictly on the excerpts. "
+                f"Create 10 flashcards from this lecture context. Base each answer strictly on the excerpts. "
                 f"Each answer: define the concept, explain how/why, use lecture terms, include a concrete detail (15-60 words). "
                 f"Return JSON array: [{{\"question\":\"...\", \"answer\":\"...\", \"source_ref\":\"Page 3\"}}]. "
                 f"Use source_ref from context markers (e.g. [Page N] or [Time MM:SS]).{existing_text}\n\nContext:\n{context}\n\nJSON array:"
             ),
         },
     ]
-    response = client.chat(messages, temperature=0.5, max_tokens=400).strip()
+    response = client.chat(messages, temperature=0.5, max_tokens=800).strip()
     response = re.sub(r"^```(?:json)?\s*", "", response)
     response = re.sub(r"\s*```\s*$", "", response).strip()
 
@@ -714,7 +745,7 @@ def _generate_flashcards_from_chunks(
     try:
         parsed = json.loads(response)
         if isinstance(parsed, list):
-            for i, item in enumerate(parsed[:5]):
+            for i, item in enumerate(parsed[:12]):
                 if isinstance(item, dict):
                     q = item.get("question") or item.get("front") or ""
                     a = item.get("answer") or item.get("back") or ""
@@ -737,12 +768,15 @@ def generate_flashcards_v2(
     user_id: Optional[int] = None,
     strategy: str = "keypoints_v1",
     regenerate: bool = False,
+    target_count: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
     Main flashcard generation pipeline.
-    Returns list of 5 validated flashcards.
+    Returns list of target_count validated flashcards (default FINAL_COUNT_DEFAULT).
     Auto-generates key points if missing; falls back to chunks if key points fail.
     """
+    n = target_count if target_count is not None else FINAL_COUNT_DEFAULT
+    n = max(FLASHCARD_COUNT_MIN, min(FLASHCARD_COUNT_MAX, n))
     # 0. Ensure lecture is ready
     lecture = get_lecture(lecture_id)
     if not lecture:
@@ -808,29 +842,30 @@ def generate_flashcards_v2(
             )
             validated.append(candidate)
     
-    # 5. Deduplicate using embeddings
-    # Use simple embedding function for now (can be upgraded to DeepSeek embeddings)
+    # 5. Deduplicate using embeddings (when regenerating, only dedup within new batch - don't filter vs old set)
     def embedding_func(texts: List[str]) -> List[List[float]]:
         return embed_texts(texts)
     
-    deduplicated = deduplicate_candidates(validated, existing_questions, embedding_func)
+    dedup_against = [] if regenerate else existing_questions
+    deduplicated = deduplicate_candidates(validated, dedup_against, embedding_func)
     
-    # 6. Select best 5 with coverage
+    # 6. Select best n with coverage
     max_per_keypoint = 2 if key_points and len(key_points) >= 5 else 3
     selected = select_final_flashcards(
         deduplicated,
-        target_count=FINAL_COUNT,
+        target_count=n,
         max_per_keypoint=max_per_keypoint,
     )
     
     # 7. Fill missing if needed (only when using key points)
-    if len(selected) < FINAL_COUNT and key_points:
-        missing_count = FINAL_COUNT - len(selected)
+    if len(selected) < n and key_points:
+        missing_count = n - len(selected)
+        # Request extra candidates to account for validation filtering
         try:
             additional = fill_missing_flashcards(
                 key_points,
                 selected,
-                missing_count,
+                missing_count * 3,  # Request 3x to ensure enough pass validation
                 chunks_per_keypoint=chunks_per_keypoint,
             )
             # Validate and add
@@ -848,15 +883,15 @@ def generate_flashcards_v2(
                         kp_text,
                     )
                     selected.append(candidate)
-                    if len(selected) >= FINAL_COUNT:
+                    if len(selected) >= n:
                         break
         except Exception as e:
             # If fill fails, just return what we have
             pass
     
     # 8. Deterministic fallback from key points (guarantee minimum coverage, only when key points exist)
-    if len(selected) < FINAL_COUNT and key_points:
-        remaining = FINAL_COUNT - len(selected)
+    if len(selected) < n and key_points:
+        remaining = n - len(selected)
         normalized_existing = {normalize_text(q) for q in existing_questions}
         normalized_existing.update(normalize_text(c.get("question", "")) for c in selected)
         for idx, key_point in enumerate(key_points):
@@ -891,8 +926,43 @@ def generate_flashcards_v2(
             normalized_existing.add(normalize_text(question))
             remaining -= 1
     
-    # Ensure we return exactly FINAL_COUNT (or as many as possible)
-    final = selected[:FINAL_COUNT]
+    # 9. Lenient fallback: if we have too few cards, accept candidates that pass lenient validation only
+    selected_questions = {normalize_text(s.get("question", "")) for s in selected}
+    if len(selected) < n and candidates:
+        for c in candidates:
+            if len(selected) >= n:
+                break
+            q, a = c.get("question", ""), c.get("answer", "")
+            if normalize_text(q) in selected_questions:
+                continue
+            if not validate_flashcard_lenient(q, a):
+                continue
+            kp_idx = c.get("keypoint_index")
+            kp_text = key_points[kp_idx - 1] if key_points and kp_idx and 1 <= kp_idx <= len(key_points) else None
+            c["quality_score"] = compute_quality_score(q, a, kp_text)
+            c.setdefault("question", q)
+            c.setdefault("answer", a)
+            selected.append(c)
+            selected_questions.add(normalize_text(q))
+
+    # 10. Ultimate fallback: if still empty and we have key points, create minimal cards
+    if len(selected) == 0 and key_points:
+        for idx, kp in enumerate(key_points[:n]):
+            kp_text = (kp or "").strip().rstrip(".")
+            if not kp_text or len(kp_text.split()) < 2:
+                continue
+            question = f"What is {kp_text}?"
+            answer = f"{kp_text}. It is a key concept for understanding the topic."
+            if validate_flashcard_lenient(question, answer):
+                selected.append({
+                    "question": question,
+                    "answer": answer,
+                    "keypoint_index": idx + 1,
+                    "quality_score": 0.5,
+                })
+
+    # Ensure we return exactly n (or as many as possible)
+    final = selected[:n]
     
     # Add source_keypoint_id and provenance (1-indexed in prompt, 0-indexed in list)
     for card in final:

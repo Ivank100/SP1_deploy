@@ -12,15 +12,11 @@ export default function Flashcards({ flashcards }: FlashcardsProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
   const [deletedIds, setDeletedIds] = useState<Set<number>>(new Set());
-  const [reviewById, setReviewById] = useState<Record<number, 'missed' | 'got' | null>>({});
-  const [ratingById, setRatingById] = useState<Record<number, 'good' | 'bad' | null>>({});
 
   useEffect(() => {
     setDeletedIds(new Set());
     setActiveIndex(0);
     setShowAnswer(false);
-    setReviewById({});
-    setRatingById({});
   }, [flashcards]);
 
   const visibleCards = useMemo(
@@ -36,12 +32,6 @@ export default function Flashcards({ flashcards }: FlashcardsProps) {
   }, [activeIndex, visibleCards.length]);
 
   const activeCard = visibleCards[activeIndex];
-  const activeReview = activeCard ? reviewById[activeCard.id] ?? null : null;
-  const activeRating = activeCard ? ratingById[activeCard.id] ?? null : null;
-  const missedTotal = Object.values(reviewById).filter((value) => value === 'missed').length;
-  const gotTotal = Object.values(reviewById).filter((value) => value === 'got').length;
-  const goodTotal = Object.values(ratingById).filter((value) => value === 'good').length;
-  const badTotal = Object.values(ratingById).filter((value) => value === 'bad').length;
 
   const handleNext = () => {
     if (visibleCards.length === 0) {
@@ -65,26 +55,6 @@ export default function Flashcards({ flashcards }: FlashcardsProps) {
     }
     setDeletedIds((prev) => new Set(prev).add(activeCard.id));
     setShowAnswer(false);
-  };
-
-  const toggleReview = (value: 'missed' | 'got') => {
-    if (!activeCard) {
-      return;
-    }
-    setReviewById((prev) => ({
-      ...prev,
-      [activeCard.id]: prev[activeCard.id] === value ? null : value,
-    }));
-  };
-
-  const toggleRating = (value: 'good' | 'bad') => {
-    if (!activeCard) {
-      return;
-    }
-    setRatingById((prev) => ({
-      ...prev,
-      [activeCard.id]: prev[activeCard.id] === value ? null : value,
-    }));
   };
 
   if (!flashcards || flashcards.length === 0) {
@@ -167,56 +137,6 @@ export default function Flashcards({ flashcards }: FlashcardsProps) {
                   className="rounded-full border border-white/10 px-4 py-2 text-xs text-white/70 hover:text-white"
                 >
                   Next
-                </button>
-              </div>
-
-              <div className="mt-6 flex items-center justify-center gap-4">
-                <button
-                  type="button"
-                  onClick={() => toggleReview('missed')}
-                  className={`rounded-full border px-4 py-2 text-xs ${
-                    activeReview === 'missed'
-                      ? 'border-red-400 text-red-100 bg-red-500/10'
-                      : 'border-red-500/40 text-red-200 hover:border-red-400'
-                  }`}
-                >
-                  Missed it · {missedTotal}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleReview('got')}
-                  className={`rounded-full border px-4 py-2 text-xs ${
-                    activeReview === 'got'
-                      ? 'border-emerald-400 text-emerald-100 bg-emerald-500/10'
-                      : 'border-emerald-500/40 text-emerald-200 hover:border-emerald-400'
-                  }`}
-                >
-                  Got it · {gotTotal}
-                </button>
-              </div>
-
-              <div className="mt-6 flex items-center justify-center gap-4 text-xs text-white/70">
-                <button
-                  type="button"
-                  onClick={() => toggleRating('good')}
-                  className={`rounded-full border px-4 py-2 ${
-                    activeRating === 'good'
-                      ? 'border-white/50 text-white bg-white/10'
-                      : 'border-white/10 hover:text-white'
-                  }`}
-                >
-                  Good content · {goodTotal}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleRating('bad')}
-                  className={`rounded-full border px-4 py-2 ${
-                    activeRating === 'bad'
-                      ? 'border-white/50 text-white bg-white/10'
-                      : 'border-white/10 hover:text-white'
-                  }`}
-                >
-                  Bad content · {badTotal}
                 </button>
               </div>
             </div>

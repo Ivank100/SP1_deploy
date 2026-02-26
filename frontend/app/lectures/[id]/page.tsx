@@ -15,6 +15,10 @@ import {
   LectureAnalyticsResponse,
   LectureResource,
 } from '@/lib/api';
+
+/** Flashcard count range - keep in sync with apiClient.FLASHCARD_COUNT_MIN/MAX and backend */
+const FLASHCARD_COUNT_MIN = 1;
+const FLASHCARD_COUNT_MAX = 5;
 import Link from 'next/link';
 import Flashcards from '@/components/Flashcards';
 import AudioPlayer from '@/components/AudioPlayer';
@@ -68,6 +72,7 @@ export default function LecturePage() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [keyPointsLoading, setKeyPointsLoading] = useState(false);
   const [flashcardsLoading, setFlashcardsLoading] = useState(false);
+  const [flashcardCount, setFlashcardCount] = useState(5);
   const [showRecentQuestions, setShowRecentQuestions] = useState(true);
   const [questionFilter, setQuestionFilter] = useState<'all' | 'answered' | 'unanswered' | 'flagged' | 'hidden'>('all');
   const [questionSort, setQuestionSort] = useState<'newest' | 'oldest' | 'most_repeated'>('newest');
@@ -385,7 +390,7 @@ export default function LecturePage() {
     setFlashcardsLoading(true);
     try {
       const regenerate = (materials?.flashcards?.length ?? 0) > 0;
-      const response = await apiClient.generateFlashcards(lectureId, regenerate);
+      const response = await apiClient.generateFlashcards(lectureId, regenerate, flashcardCount);
       setMaterials((prev) => ({
         lecture_id: lectureId,
         summary: prev?.summary ?? null,
@@ -1254,12 +1259,27 @@ export default function LecturePage() {
                   </button>
                   {showFlashcardsTool && (
                     <div className="px-4 pb-4 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <label htmlFor="flashcard-count" className="text-sm font-medium text-gray-700">
+                          Number of cards:
+                        </label>
+                        <select
+                          id="flashcard-count"
+                          value={flashcardCount}
+                          onChange={(e) => setFlashcardCount(Number(e.target.value))}
+                          className="rounded-md border border-gray-300 px-2 py-1 text-sm focus:ring-primary-500 focus:border-primary-500"
+                        >
+                          {Array.from({ length: FLASHCARD_COUNT_MAX - FLASHCARD_COUNT_MIN + 1 }, (_, i) => i + FLASHCARD_COUNT_MIN).map((n) => (
+                            <option key={n} value={n}>{n}</option>
+                          ))}
+                        </select>
+                      </div>
                       <button
                         onClick={handleGenerateFlashcards}
                         className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg text-base font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={flashcardsLoading}
                       >
-                        {flashcardsLoading ? 'Generating...' : materials?.flashcards?.length ? 'Regenerate 5 Cards' : 'Generate 5 Cards'}
+                        {flashcardsLoading ? 'Generating...' : materials?.flashcards?.length ? `Regenerate ${flashcardCount} Cards` : `Generate ${flashcardCount} Cards`}
                       </button>
                       {loadingMaterials ? (
                         <p className="text-sm text-gray-500">Loading...</p>
