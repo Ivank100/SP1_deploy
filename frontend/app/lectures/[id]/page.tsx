@@ -288,6 +288,23 @@ export default function LecturePage() {
     }
   };
 
+  const handleDownloadLecture = async () => {
+    if (!lecture?.file_path) return;
+    try {
+      const blob = await apiClient.downloadLectureFile(lectureId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = lecture.original_name || 'lecture';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      alert(error.response?.data?.detail || 'Failed to download lecture');
+    }
+  };
+
   useEffect(() => {
     if (currentUser?.role === 'instructor') {
       loadLectureAnalytics();
@@ -923,19 +940,13 @@ export default function LecturePage() {
                           >
                             Preview
                           </a>
-                          <a
-                            href={lecture?.file_path ? `${normalizedApiBase}/${lecture.file_path.replace(/^\/+/, '')}` : '#'}
-                            download
-                            className="px-4 py-2 text-base border border-gray-300 rounded-lg hover:bg-gray-50"
-                          >
-                            Download
-                          </a>
                           <button
                             type="button"
-                            onClick={() => replaceFileInputRef.current?.click()}
-                            className="px-4 py-2 text-base border border-gray-300 rounded-lg hover:bg-gray-50"
+                            onClick={handleDownloadLecture}
+                            disabled={!lecture?.file_path}
+                            className="px-4 py-2 text-base border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            Replace
+                            Download
                           </button>
                         </div>
                       </div>

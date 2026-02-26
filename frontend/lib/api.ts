@@ -577,6 +577,13 @@ export const apiClient = {
     return response.data;
   },
 
+  async downloadLectureFile(lectureId: number): Promise<Blob> {
+    const response = await api.get(`/api/lectures/${lectureId}/download`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
   async deleteLecture(id: number): Promise<void> {
     await api.delete(`/api/lectures/${id}`);
   },

@@ -2,7 +2,7 @@ from collections import defaultdict
 import os
 from pathlib import Path
 from uuid import uuid4
-from fastapi import APIRouter, HTTPException, UploadFile, File, status, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, status, Depends, Query
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, EmailStr
 
@@ -351,7 +351,7 @@ async def create_upload_request(
 @router.get("/{course_id}/upload-requests", response_model=UploadRequestListResponse)
 async def list_upload_requests(
     course_id: int,
-    status: Optional[str] = None,
+    status_filter: Optional[str] = Query(None, alias="status"),
     current_user: dict = Depends(get_current_user),
 ):
     """List upload requests (instructor/TA only)."""
@@ -371,9 +371,9 @@ async def list_upload_requests(
             WHERE r.course_id = %s
         """
         params: List[Any] = [course_id]
-        if status:
+        if status_filter:
             base_query += " AND r.status = %s"
-            params.append(status)
+            params.append(status_filter)
         base_query += " ORDER BY r.created_at DESC"
         cur.execute(base_query, tuple(params))
         rows = cur.fetchall()
