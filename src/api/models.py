@@ -325,44 +325,12 @@ class CourseStudentResponse(BaseModel):
     student_id: int
     student_email: str
     role: str
-    section_id: Optional[int] = None
-    section_name: Optional[str] = None
-    group_id: Optional[int] = None
-    group_name: Optional[str] = None
     questions_count: int = 0
     last_active: Optional[str] = None
 
 
-class CourseSectionResponse(BaseModel):
-    id: int
-    name: str
-
-
-class CourseSectionListResponse(BaseModel):
-    sections: List[CourseSectionResponse]
-
-
-class CreateSectionRequest(BaseModel):
-    name: str
-
-
-class SectionGroupResponse(BaseModel):
-    id: int
-    name: str
-
-
-class SectionGroupListResponse(BaseModel):
-    groups: List[SectionGroupResponse]
-
-
-class CreateGroupRequest(BaseModel):
-    name: str
-
-
 class UpdateStudentAssignmentRequest(BaseModel):
     role: Optional[str] = None
-    section_id: Optional[int] = None
-    group_id: Optional[int] = None
 
 
 class CreateAnnouncementRequest(BaseModel):

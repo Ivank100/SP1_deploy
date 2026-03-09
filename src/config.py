@@ -16,6 +16,11 @@ if DEEPSEEK_BASE_URL is not None:
 if not DEEPSEEK_BASE_URL:
     raise ValueError("DEEPSEEK_BASE_URL environment variable is required")
 
+# Chat model (e.g. openrouter/auto for OpenRouter, gpt-4o-mini / gpt-4o for OpenAI)
+LLM_CHAT_MODEL = os.getenv("LLM_CHAT_MODEL", "openrouter/auto")
+if LLM_CHAT_MODEL is not None:
+    LLM_CHAT_MODEL = LLM_CHAT_MODEL.strip()
+
 # OpenAI API (optional - only needed if using Whisper API instead of local)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Optional - local Whisper is used if not set
 if OPENAI_API_KEY is not None:

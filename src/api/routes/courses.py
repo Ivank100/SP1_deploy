@@ -22,7 +22,6 @@ from ...db import (
     delete_course_as_instructor,
     enroll_student_by_code,
     get_user_courses,
-    get_or_create_default_section,
 )
 from ..middleware.auth import get_current_user, get_current_instructor
 from ...rag_query import answer_question
@@ -36,12 +35,6 @@ from ..models import (
     QueryResponse,
     CourseQueryRequest,
     CourseStudentResponse,
-    CourseSectionListResponse,
-    CourseSectionResponse,
-    CreateSectionRequest,
-    SectionGroupListResponse,
-    SectionGroupResponse,
-    CreateGroupRequest,
     UpdateStudentAssignmentRequest,
     CreateAnnouncementRequest,
     AnnouncementListResponse,
@@ -608,8 +601,6 @@ async def query_course(
 class AddStudentRequest(BaseModel):
     """Request to add a student to a course by email."""
     email: EmailStr
-    section_id: Optional[int] = None
-    group_id: Optional[int] = None
     role: Optional[str] = "student"
 
 
@@ -770,37 +761,9 @@ async def add_student_to_course(
             detail="Role must be student or ta",
         )
 
-    # Ensure section exists (required)
-    section_id = request.section_id or get_or_create_default_section(course_id)
-
-    # Validate section belongs to course
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT 1 FROM course_sections WHERE id = %s AND course_id = %s",
-            (section_id, course_id),
-        )
-        if not cur.fetchone():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Selected section does not belong to this course",
-            )
-
-        group_id = request.group_id
-        if group_id is not None:
-            cur.execute(
-                "SELECT 1 FROM section_groups WHERE id = %s AND section_id = %s",
-                (group_id, section_id),
-            )
-            if not cur.fetchone():
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Selected group does not belong to this section",
-                )
-
     # Add student to course (insert into user_courses so they see it on their dashboard)
     try:
-        add_user_to_course(student_id, course_id, role, section_id=section_id, group_id=request.group_id)
+        add_user_to_course(student_id, course_id, role)
         return AddStudentResponse(
             message=f"Student {request.email} successfully added to course",
             student_id=student_id,
@@ -934,7 +897,7 @@ async def get_course_students(
             detail="You don't have access to this course",
         )
     
-    # Get all students enrolled in the course with section/group/activity
+    # Get all students enrolled in the course with activity
     init_schema()
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
@@ -942,21 +905,15 @@ async def get_course_students(
             SELECT u.id,
                    u.email,
                    uc.role,
-                   uc.section_id,
-                   s.name AS section_name,
-                   uc.group_id,
-                   g.name AS group_name,
                    COALESCE(COUNT(CASE WHEN (l.course_id = %s OR (qh.course_id = %s AND qh.lecture_id IS NULL)) THEN qh.id END), 0) AS questions_count,
                    MAX(CASE WHEN (l.course_id = %s OR (qh.course_id = %s AND qh.lecture_id IS NULL)) THEN qh.created_at END) AS last_active
             FROM users u
             JOIN user_courses uc ON u.id = uc.user_id
-            LEFT JOIN course_sections s ON s.id = uc.section_id
-            LEFT JOIN section_groups g ON g.id = uc.group_id
             LEFT JOIN query_history qh
               ON qh.user_id = u.id
             LEFT JOIN lectures l ON l.id = qh.lecture_id
             WHERE uc.course_id = %s AND u.role IN ('student', 'ta')
-            GROUP BY u.id, u.email, uc.role, uc.section_id, s.name, uc.group_id, g.name
+            GROUP BY u.id, u.email, uc.role
             ORDER BY u.email
             """,
             (course_id, course_id, course_id, course_id, course_id),
@@ -968,12 +925,8 @@ async def get_course_students(
             student_id=row[0],
             student_email=row[1],
             role=row[2],
-            section_id=row[3],
-            section_name=row[4],
-            group_id=row[5],
-            group_name=row[6],
-            questions_count=row[7] or 0,
-            last_active=row[8].isoformat() if row[8] else None,
+            questions_count=row[3] or 0,
+            last_active=row[4].isoformat() if row[4] else None,
         )
         for row in students
     ]
@@ -986,14 +939,12 @@ async def update_student_assignment(
     payload: UpdateStudentAssignmentRequest,
     current_user: dict = Depends(get_current_instructor),
 ):
-    """Update student role/section/group within a course."""
-    # Check course access
+    """Update student role within a course."""
     if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
         raise HTTPException(status_code=403, detail="You don't have access to this course")
 
     init_schema()
     with get_conn() as conn, conn.cursor() as cur:
-        # Validate student enrollment
         cur.execute(
             "SELECT 1 FROM user_courses WHERE user_id = %s AND course_id = %s",
             (student_id, course_id),
@@ -1002,267 +953,17 @@ async def update_student_assignment(
             raise HTTPException(status_code=404, detail="Student is not enrolled in this course")
 
         role = payload.role.lower() if payload.role else None
-        fields_set = payload.model_fields_set
-        role_provided = "role" in fields_set
-        section_provided = "section_id" in fields_set
-        group_provided = "group_id" in fields_set
         if role and role not in ("student", "ta"):
             raise HTTPException(status_code=400, detail="Role must be student or ta")
 
-        section_id = payload.section_id
-        group_id = payload.group_id
-
-        if section_provided and section_id is not None:
+        if role is not None:
             cur.execute(
-                "SELECT 1 FROM course_sections WHERE id = %s AND course_id = %s",
-                (section_id, course_id),
+                "UPDATE user_courses SET role = %s WHERE user_id = %s AND course_id = %s",
+                (role, student_id, course_id),
             )
-            if not cur.fetchone():
-                raise HTTPException(status_code=400, detail="Selected section does not belong to this course")
-
-        if group_provided and group_id is not None:
-            cur.execute(
-                "SELECT 1 FROM section_groups WHERE id = %s",
-                (group_id,),
-            )
-            group = cur.fetchone()
-            if not group:
-                raise HTTPException(status_code=400, detail="Selected group does not exist")
-
-            if section_provided and section_id is not None:
-                cur.execute(
-                    "SELECT 1 FROM section_groups WHERE id = %s AND section_id = %s",
-                    (group_id, section_id),
-                )
-                if not cur.fetchone():
-                    raise HTTPException(status_code=400, detail="Selected group does not belong to this section")
-
-        cur.execute(
-            """
-            UPDATE user_courses
-            SET role = CASE WHEN %s THEN COALESCE(%s, role) ELSE role END,
-                section_id = CASE WHEN %s THEN %s ELSE section_id END,
-                group_id = CASE WHEN %s THEN %s ELSE group_id END
-            WHERE user_id = %s AND course_id = %s
-            """,
-            (
-                role_provided,
-                role,
-                section_provided,
-                section_id,
-                group_provided,
-                group_id,
-                student_id,
-                course_id,
-            ),
-        )
-        conn.commit()
+            conn.commit()
 
     return {"message": "Student updated"}
-
-
-@router.get("/{course_id}/sections", response_model=CourseSectionListResponse)
-async def list_sections(
-    course_id: int,
-    current_user: dict = Depends(get_current_instructor),
-):
-    """List sections for a course."""
-    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
-        raise HTTPException(status_code=403, detail="You don't have access to this course")
-
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, name FROM course_sections WHERE course_id = %s ORDER BY created_at ASC",
-            (course_id,),
-        )
-        rows = cur.fetchall()
-
-    return CourseSectionListResponse(
-        sections=[CourseSectionResponse(id=row[0], name=row[1]) for row in rows]
-    )
-
-
-@router.post("/{course_id}/sections", response_model=CourseSectionResponse, status_code=status.HTTP_201_CREATED)
-async def create_section(
-    course_id: int,
-    payload: CreateSectionRequest,
-    current_user: dict = Depends(get_current_instructor),
-):
-    """Create a section for a course."""
-    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
-        raise HTTPException(status_code=403, detail="You don't have access to this course")
-
-    name = payload.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Section name is required")
-
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO course_sections (course_id, name)
-            VALUES (%s, %s)
-            ON CONFLICT (course_id, name) DO NOTHING
-            RETURNING id, name
-            """,
-            (course_id, name),
-        )
-        row = cur.fetchone()
-        conn.commit()
-
-        if not row:
-            # Section already exists
-            cur.execute(
-                "SELECT id, name FROM course_sections WHERE course_id = %s AND name = %s",
-                (course_id, name),
-            )
-            row = cur.fetchone()
-
-    return CourseSectionResponse(id=row[0], name=row[1])
-
-
-@router.delete("/{course_id}/sections/{section_id}", status_code=status.HTTP_200_OK)
-async def delete_section(
-    course_id: int,
-    section_id: int,
-    current_user: dict = Depends(get_current_instructor),
-):
-    """Delete a section if no students are assigned."""
-    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
-        raise HTTPException(status_code=403, detail="You don't have access to this course")
-
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT 1 FROM course_sections WHERE id = %s AND course_id = %s",
-            (section_id, course_id),
-        )
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail="Section not found")
-
-        cur.execute(
-            "SELECT COUNT(*) FROM user_courses WHERE course_id = %s AND section_id = %s",
-            (course_id, section_id),
-        )
-        if cur.fetchone()[0] > 0:
-            raise HTTPException(status_code=400, detail="Cannot delete a section with students")
-
-        cur.execute("DELETE FROM course_sections WHERE id = %s", (section_id,))
-        conn.commit()
-
-    return {"message": "Section deleted"}
-
-
-@router.get("/{course_id}/sections/{section_id}/groups", response_model=SectionGroupListResponse)
-async def list_groups(
-    course_id: int,
-    section_id: int,
-    current_user: dict = Depends(get_current_instructor),
-):
-    """List groups for a section."""
-    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
-        raise HTTPException(status_code=403, detail="You don't have access to this course")
-
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT g.id, g.name
-            FROM section_groups g
-            JOIN course_sections s ON s.id = g.section_id
-            WHERE s.id = %s AND s.course_id = %s
-            ORDER BY g.created_at ASC
-            """,
-            (section_id, course_id),
-        )
-        rows = cur.fetchall()
-
-    return SectionGroupListResponse(groups=[SectionGroupResponse(id=row[0], name=row[1]) for row in rows])
-
-
-@router.post("/{course_id}/sections/{section_id}/groups", response_model=SectionGroupResponse, status_code=status.HTTP_201_CREATED)
-async def create_group(
-    course_id: int,
-    section_id: int,
-    payload: CreateGroupRequest,
-    current_user: dict = Depends(get_current_instructor),
-):
-    """Create a group for a section."""
-    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
-        raise HTTPException(status_code=403, detail="You don't have access to this course")
-
-    name = payload.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Group name is required")
-
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT 1 FROM course_sections WHERE id = %s AND course_id = %s",
-            (section_id, course_id),
-        )
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail="Section not found")
-
-        cur.execute(
-            """
-            INSERT INTO section_groups (section_id, name)
-            VALUES (%s, %s)
-            ON CONFLICT (section_id, name) DO NOTHING
-            RETURNING id, name
-            """,
-            (section_id, name),
-        )
-        row = cur.fetchone()
-        conn.commit()
-
-        if not row:
-            cur.execute(
-                "SELECT id, name FROM section_groups WHERE section_id = %s AND name = %s",
-                (section_id, name),
-            )
-            row = cur.fetchone()
-
-    return SectionGroupResponse(id=row[0], name=row[1])
-
-
-@router.delete("/{course_id}/sections/{section_id}/groups/{group_id}", status_code=status.HTTP_200_OK)
-async def delete_group(
-    course_id: int,
-    section_id: int,
-    group_id: int,
-    current_user: dict = Depends(get_current_instructor),
-):
-    """Delete a group if no students are assigned."""
-    if not can_user_access_course(current_user["id"], course_id, current_user["role"]):
-        raise HTTPException(status_code=403, detail="You don't have access to this course")
-
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT g.id
-            FROM section_groups g
-            JOIN course_sections s ON s.id = g.section_id
-            WHERE g.id = %s AND s.id = %s AND s.course_id = %s
-            """,
-            (group_id, section_id, course_id),
-        )
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail="Group not found")
-
-        cur.execute(
-            "SELECT COUNT(*) FROM user_courses WHERE course_id = %s AND group_id = %s",
-            (course_id, group_id),
-        )
-        if cur.fetchone()[0] > 0:
-            raise HTTPException(status_code=400, detail="Cannot delete a group with students")
-
-        cur.execute("DELETE FROM section_groups WHERE id = %s", (group_id,))
-        conn.commit()
-
-    return {"message": "Group deleted"}
 
 
 @router.post("/{course_id}/announcements", response_model=AnnouncementResponse, status_code=status.HTTP_201_CREATED)

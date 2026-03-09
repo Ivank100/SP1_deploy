@@ -20,8 +20,6 @@ def add_user_to_course(
     user_id: int,
     course_id: int,
     role: str = 'student',
-    section_id: Optional[int] = None,
-    group_id: Optional[int] = None,
 ) -> None:
     """Links a user to a course. Used by auth and instructor tools."""
     init_schema()
@@ -29,31 +27,13 @@ def add_user_to_course(
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO user_courses (user_id, course_id, role, section_id, group_id)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO user_courses (user_id, course_id, role)
+                VALUES (%s, %s, %s)
                 ON CONFLICT (user_id, course_id) DO NOTHING
                 """,
-                (user_id, course_id, role, section_id, group_id)
+                (user_id, course_id, role)
             )
             conn.commit()
-
-def enroll_student_by_code(user_id: int, join_code: str) -> int:
-    """Links a student to a course using the unique join code."""
-    init_schema()
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT id FROM courses WHERE UPPER(join_code) = %s", 
-                (join_code.strip().upper(),)
-            )
-            course = cur.fetchone()
-            if not course:
-                raise ValueError("Invalid join code.")
-            course_id = course[0]
-            # Ensure student has a section assignment
-            section_id = get_or_create_default_section(course_id)
-            add_user_to_course(user_id, course_id, 'student', section_id=section_id)
-            return course_id
 def get_conn():
     return psycopg.connect(
         host=PG_HOST,
@@ -132,8 +112,6 @@ def init_schema():
                 user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
                 role TEXT DEFAULT 'student',
-                section_id INT,
-                group_id INT,
                 PRIMARY KEY (user_id, course_id)
             );
         """)
@@ -148,46 +126,6 @@ def init_schema():
         cur.execute("""
             ALTER TABLE user_courses
             ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'student';
-        """)
-
-        # Add section/group columns if they don't exist (migration)
-        cur.execute("""
-            ALTER TABLE user_courses
-            ADD COLUMN IF NOT EXISTS section_id INT;
-        """)
-        cur.execute("""
-            ALTER TABLE user_courses
-            ADD COLUMN IF NOT EXISTS group_id INT;
-        """)
-
-        # Sections table (per course)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS course_sections (
-                id SERIAL PRIMARY KEY,
-                course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-                name TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(course_id, name)
-            );
-        """)
-        cur.execute("""
-            CREATE INDEX IF NOT EXISTS course_sections_course_id_idx
-            ON course_sections(course_id);
-        """)
-
-        # Groups table (per section)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS section_groups (
-                id SERIAL PRIMARY KEY,
-                section_id INT NOT NULL REFERENCES course_sections(id) ON DELETE CASCADE,
-                name TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(section_id, name)
-            );
-        """)
-        cur.execute("""
-            CREATE INDEX IF NOT EXISTS section_groups_section_id_idx
-            ON section_groups(section_id);
         """)
 
         # Announcements table (per course)
@@ -1633,35 +1571,6 @@ def get_user_courses(user_id: int) -> List[int]:
             (user_id,),
         )
         return [row[0] for row in cur.fetchall()]
-
-
-def get_or_create_default_section(course_id: int) -> int:
-    """Ensure a default section exists for a course and return its ID."""
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id FROM course_sections
-            WHERE course_id = %s
-            ORDER BY created_at ASC
-            LIMIT 1
-            """,
-            (course_id,),
-        )
-        row = cur.fetchone()
-        if row:
-            return row[0]
-        cur.execute(
-            """
-            INSERT INTO course_sections (course_id, name)
-            VALUES (%s, %s)
-            RETURNING id
-            """,
-            (course_id, "Section 1"),
-        )
-        section_id = cur.fetchone()[0]
-        conn.commit()
-        return section_id
 
 
 def can_user_access_course(user_id: int, course_id: int, user_role: str) -> bool:

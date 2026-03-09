@@ -1,7 +1,7 @@
 # src/deepseek_client.py
 import requests
 from typing import List
-from .config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL
+from .config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, LLM_CHAT_MODEL
 
 class DeepSeekClient:
     def __init__(self, api_key: str | None = None, base_url: str | None = None):
@@ -31,7 +31,8 @@ class DeepSeekClient:
 
     # ---- embeddings ----
     def embed(self, texts: List[str], model: str = "deepseek-embed") -> List[list[float]]:
-        url = f"{self.base_url}/v1/embeddings"   # adjust to real path
+        # base_url already includes /v1 (e.g. https://api.openai.com/v1)
+        url = f"{self.base_url.rstrip('/')}/embeddings"
         payload = {"model": model, "input": texts}
         resp = self.session.post(url, json=payload)
         resp.raise_for_status()
@@ -42,14 +43,15 @@ class DeepSeekClient:
     def chat(
         self,
         messages,
-        model: str = "openrouter/auto",
+        model: str | None = None,
         temperature: float = 0.2,
         max_tokens: int = 303,
     ) -> str:
-        # OpenRouter is OpenAI-compatible: /chat/completions
-        url = f"{self.base_url}/chat/completions"
+        # OpenAI-compatible: /chat/completions (OpenRouter, OpenAI, etc.)
+        model = model or LLM_CHAT_MODEL
+        url = f"{self.base_url.rstrip('/')}/chat/completions"
         payload = {
-            "model": model,        # you can swap to any OpenRouter model id
+            "model": model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -57,8 +59,7 @@ class DeepSeekClient:
         resp = self.session.post(url, json=payload)
 
         if not resp.ok:
-            # nicer error message than bare raise_for_status()
-            raise RuntimeError(f"OpenRouter error {resp.status_code}: {resp.text}")
+            raise RuntimeError(f"LLM API error {resp.status_code}: {resp.text}")
 
         data = resp.json()
         return data["choices"][0]["message"]["content"]

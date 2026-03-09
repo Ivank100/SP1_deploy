@@ -219,30 +219,8 @@ export interface CourseStudent {
   student_id: number;
   student_email: string;
   role: 'student' | 'ta';
-  section_id?: number | null;
-  section_name?: string | null;
-  group_id?: number | null;
-  group_name?: string | null;
   questions_count: number;
   last_active?: string | null;
-}
-
-export interface CourseSection {
-  id: number;
-  name: string;
-}
-
-export interface CourseSectionListResponse {
-  sections: CourseSection[];
-}
-
-export interface SectionGroup {
-  id: number;
-  name: string;
-}
-
-export interface SectionGroupListResponse {
-  groups: SectionGroup[];
 }
 
 export interface Announcement {
@@ -387,14 +365,10 @@ export const apiClient = {
   async addStudentToCourse(
     courseId: number,
     email: string,
-    sectionId: number,
-    groupId?: number | null,
     role: 'student' | 'ta' = 'student'
   ): Promise<{ message: string; student_id?: number; student_email: string }> {
     const response = await api.post(`/api/courses/${courseId}/students`, {
       email,
-      section_id: sectionId,
-      group_id: groupId ?? null,
       role,
     });
     return response.data;
@@ -413,39 +387,9 @@ export const apiClient = {
   async updateStudentAssignment(
     courseId: number,
     studentId: number,
-    payload: { role?: 'student' | 'ta'; section_id?: number; group_id?: number | null }
+    payload: { role?: 'student' | 'ta' }
   ): Promise<{ message: string }> {
     const response = await api.patch(`/api/courses/${courseId}/students/${studentId}`, payload);
-    return response.data;
-  },
-
-  async getCourseSections(courseId: number): Promise<CourseSectionListResponse> {
-    const response = await api.get<CourseSectionListResponse>(`/api/courses/${courseId}/sections`);
-    return response.data;
-  },
-
-  async createCourseSection(courseId: number, name: string): Promise<CourseSection> {
-    const response = await api.post<CourseSection>(`/api/courses/${courseId}/sections`, { name });
-    return response.data;
-  },
-
-  async deleteCourseSection(courseId: number, sectionId: number): Promise<{ message: string }> {
-    const response = await api.delete(`/api/courses/${courseId}/sections/${sectionId}`);
-    return response.data;
-  },
-
-  async getSectionGroups(courseId: number, sectionId: number): Promise<SectionGroupListResponse> {
-    const response = await api.get<SectionGroupListResponse>(`/api/courses/${courseId}/sections/${sectionId}/groups`);
-    return response.data;
-  },
-
-  async createSectionGroup(courseId: number, sectionId: number, name: string): Promise<SectionGroup> {
-    const response = await api.post<SectionGroup>(`/api/courses/${courseId}/sections/${sectionId}/groups`, { name });
-    return response.data;
-  },
-
-  async deleteSectionGroup(courseId: number, sectionId: number, groupId: number): Promise<{ message: string }> {
-    const response = await api.delete(`/api/courses/${courseId}/sections/${sectionId}/groups/${groupId}`);
     return response.data;
   },
 

@@ -109,7 +109,7 @@ export default function LecturePage() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [currentAnswer, history, scrollToBottom]);
+  }, [currentAnswer, history, asking, scrollToBottom]);
 
   useEffect(() => {
     if (lecture?.file_type === 'audio' && lecture.has_transcript) {
@@ -426,6 +426,14 @@ export default function LecturePage() {
     currentUser?.role === 'student' && currentUser.email
       ? history.filter((item) => item.user_email === currentUser.email)
       : history;
+  // Chat order: oldest first so latest is at bottom (like ChatGPT)
+  const chatMessageList = useMemo(() => {
+    return [...visibleHistory].sort((a, b) => {
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return timeA - timeB;
+    });
+  }, [visibleHistory]);
   const toggleId = (setter: Dispatch<SetStateAction<Set<number>>>, id: number) => {
     setter((prev) => {
       const next = new Set(prev);
@@ -1305,7 +1313,7 @@ export default function LecturePage() {
               <div className="flex-1 flex flex-col">
                 {/* Messages */}
                 <div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-                  {visibleHistory.length === 0 && !currentAnswer && (
+                  {chatMessageList.length === 0 && !currentAnswer && !asking && (
                     <div className="text-center py-12">
                       <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
                         <svg className="w-8 h-8 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1317,8 +1325,8 @@ export default function LecturePage() {
                     </div>
                   )}
 
-                  {/* History */}
-                  {visibleHistory.map((item) => (
+                  {/* History (oldest first so latest stays at bottom) */}
+                  {chatMessageList.map((item) => (
                     <div key={item.id} className="space-y-2">
                       <div className="flex items-start space-x-3">
                         <div className="flex-shrink-0 w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">

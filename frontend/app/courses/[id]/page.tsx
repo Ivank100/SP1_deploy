@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
   apiClient,
@@ -616,29 +616,17 @@ export default function CourseDetailPage() {
   const [courseQuestion, setCourseQuestion] = useState('');
   const [courseAsking, setCourseAsking] = useState(false);
   const [courseAnswer, setCourseAnswer] = useState<QueryResponse | null>(null);
+  const [courseChatMessages, setCourseChatMessages] = useState<{ question: string; answer: QueryResponse | null }[]>([]);
   const [queryError, setQueryError] = useState<string | null>(null);
+  const courseChatEndRef = useRef<HTMLDivElement>(null);
   const [courseStudents, setCourseStudents] = useState<Record<number, CourseStudent[]>>({});
   const [addingStudent, setAddingStudent] = useState<Record<number, boolean>>({});
   const [newStudentEmail, setNewStudentEmail] = useState<Record<number, string>>({});
   const [studentError, setStudentError] = useState<Record<number, string | null>>({});
   const [loadingStudents, setLoadingStudents] = useState<Record<number, boolean>>({});
-  const [sections, setSections] = useState<Record<number, { id: number; name: string }[]>>({});
-  const [groupsBySection, setGroupsBySection] = useState<Record<number, { id: number; name: string }[]>>({});
-  const [selectedSectionId, setSelectedSectionId] = useState<Record<number, number | null>>({});
-  const [newSectionName, setNewSectionName] = useState<Record<number, string>>({});
-  const [addingSection, setAddingSection] = useState<Record<number, boolean>>({});
-  const [newGroupName, setNewGroupName] = useState<Record<number, string>>({});
-  const [addingGroup, setAddingGroup] = useState<Record<number, boolean>>({});
-  const [showAddSection, setShowAddSection] = useState<Record<number, boolean>>({});
-  const [showAddGroup, setShowAddGroup] = useState<Record<number, boolean>>({});
   const [studentRole, setStudentRole] = useState<Record<number, 'student' | 'ta'>>({});
-  const [newStudentGroupId, setNewStudentGroupId] = useState<Record<number, number | null>>({});
-  const [showManageSections, setShowManageSections] = useState<Record<number, boolean>>({});
-  const [showManageGroups, setShowManageGroups] = useState<Record<number, boolean>>({});
   const [showManageStudents, setShowManageStudents] = useState<Record<number, boolean>>({});
   const [showStudentsMore, setShowStudentsMore] = useState<Record<number, boolean>>({});
-  const [showGroupsMore, setShowGroupsMore] = useState<Record<number, boolean>>({});
-  const [selectedGroupDetail, setSelectedGroupDetail] = useState<Record<number, { id: number; name: string } | null>>({});
   const [announcements, setAnnouncements] = useState<Record<number, { id: number; message: string; created_at?: string | null }[]>>({});
   const [newAnnouncement, setNewAnnouncement] = useState<Record<number, string>>({});
   const [announcementError, setAnnouncementError] = useState<Record<number, string | null>>({});
@@ -702,6 +690,12 @@ export default function CourseDetailPage() {
   }, [user, courseId, loadCourse]);
 
   useEffect(() => {
+    setCourseChatMessages([]);
+    setQueryError(null);
+    setCourseAnswer(null);
+  }, [courseId]);
+
+  useEffect(() => {
     if (user && courseId) {
       loadAnnouncements(courseId);
     }
@@ -743,14 +737,12 @@ export default function CourseDetailPage() {
   useEffect(() => {
     if (user?.role === 'instructor' && courseId) {
       loadCourseStudents(courseId);
-      loadSections(courseId);
     }
   }, [user?.role, courseId]);
 
   useEffect(() => {
     if (user?.role === 'instructor' && course?.id) {
       loadCourseStudents(course.id);
-      loadSections(course.id);
     }
   }, [user?.role, course?.id]);
 
@@ -800,20 +792,31 @@ export default function CourseDetailPage() {
     if (!course || !courseQuestion.trim()) {
       return;
     }
+    const questionText = courseQuestion.trim();
+    setCourseQuestion('');
     setCourseAsking(true);
     setQueryError(null);
     setCourseAnswer(null);
+    setCourseChatMessages((prev) => [...prev, { question: questionText, answer: null }]);
     try {
-      const response = await apiClient.queryCourse(course.id, courseQuestion);
-      setCourseAnswer(response);
-      setCourseQuestion('');
+      const response = await apiClient.queryCourse(course.id, questionText);
+      setCourseChatMessages((prev) => {
+        const next = [...prev];
+        next[next.length - 1] = { question: next[next.length - 1].question, answer: response };
+        return next;
+      });
     } catch (error: any) {
       console.error('Failed to query course:', error);
       setQueryError(error.response?.data?.detail || 'Failed to get course answer.');
+      setCourseChatMessages((prev) => prev.slice(0, -1));
     } finally {
       setCourseAsking(false);
     }
   };
+
+  useEffect(() => {
+    courseChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [courseChatMessages, courseAsking]);
 
   const loadCourseStudents = async (courseId: number) => {
     if (user?.role !== 'instructor') return;
@@ -830,41 +833,6 @@ export default function CourseDetailPage() {
       }));
     } finally {
       setLoadingStudents((prev) => ({ ...prev, [courseId]: false }));
-    }
-  };
-
-  const loadSections = async (courseId: number) => {
-    if (user?.role !== 'instructor') return;
-    try {
-      const response = await apiClient.getCourseSections(courseId);
-      setSections((prev) => ({ ...prev, [courseId]: response.sections }));
-      setSelectedSectionId((prev) => {
-        const existingSelection = prev[courseId];
-        const hasSelection =
-          existingSelection && response.sections.some((section) => section.id === existingSelection);
-        if (hasSelection) {
-          return prev;
-        }
-        if (response.sections.length > 0) {
-          return { ...prev, [courseId]: response.sections[0].id };
-        }
-        return { ...prev, [courseId]: null };
-      });
-      for (const section of response.sections) {
-        await loadGroups(courseId, section.id);
-      }
-    } catch (error) {
-      console.error('Failed to load sections:', error);
-    }
-  };
-
-  const loadGroups = async (courseId: number, sectionId: number) => {
-    if (user?.role !== 'instructor') return;
-    try {
-      const response = await apiClient.getSectionGroups(courseId, sectionId);
-      setGroupsBySection((prev) => ({ ...prev, [sectionId]: response.groups }));
-    } catch (error) {
-      console.error('Failed to load groups:', error);
     }
   };
 
@@ -912,20 +880,13 @@ export default function CourseDetailPage() {
       setStudentError({ ...studentError, [courseId]: 'Email is required' });
       return;
     }
-    const sectionId = selectedSectionId[courseId];
-    if (!sectionId) {
-      setStudentError({ ...studentError, [courseId]: 'Please create a section first' });
-      return;
-    }
 
     setAddingStudent({ ...addingStudent, [courseId]: true });
     setStudentError({ ...studentError, [courseId]: null });
     try {
       const role = studentRole[courseId] || 'student';
-      const groupId = newStudentGroupId[courseId] ?? null;
-      await apiClient.addStudentToCourse(courseId, email, sectionId, groupId, role);
+      await apiClient.addStudentToCourse(courseId, email, role);
       setNewStudentEmail({ ...newStudentEmail, [courseId]: '' });
-      setNewStudentGroupId({ ...newStudentGroupId, [courseId]: null });
       await loadCourseStudents(courseId);
     } catch (error: any) {
       setStudentError({ ...studentError, [courseId]: error.response?.data?.detail || 'Failed to add student' });
@@ -947,59 +908,10 @@ export default function CourseDetailPage() {
     }
   };
 
-  const handleCreateSection = async (courseId: number) => {
-    const name = newSectionName[courseId]?.trim();
-    if (!name) return;
-    setAddingSection({ ...addingSection, [courseId]: true });
-    try {
-      await apiClient.createCourseSection(courseId, name);
-      setNewSectionName({ ...newSectionName, [courseId]: '' });
-      await loadSections(courseId);
-    } catch (error: any) {
-      setStudentError({ ...studentError, [courseId]: error.response?.data?.detail || 'Failed to create section' });
-    } finally {
-      setAddingSection({ ...addingSection, [courseId]: false });
-    }
-  };
-
-  const handleCreateGroup = async (courseId: number) => {
-    const sectionId = selectedSectionId[courseId];
-    const name = newGroupName[courseId]?.trim();
-    if (!sectionId || !name) return;
-    setAddingGroup({ ...addingGroup, [courseId]: true });
-    try {
-      await apiClient.createSectionGroup(courseId, sectionId, name);
-      setNewGroupName({ ...newGroupName, [courseId]: '' });
-      await loadGroups(courseId, sectionId);
-    } catch (error: any) {
-      setStudentError({ ...studentError, [courseId]: error.response?.data?.detail || 'Failed to create group' });
-    } finally {
-      setAddingGroup({ ...addingGroup, [courseId]: false });
-    }
-  };
-
-  const handleDeleteSection = async (courseId: number, sectionId: number) => {
-    try {
-      await apiClient.deleteCourseSection(courseId, sectionId);
-      await loadSections(courseId);
-    } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to delete section');
-    }
-  };
-
-  const handleDeleteGroup = async (courseId: number, sectionId: number, groupId: number) => {
-    try {
-      await apiClient.deleteSectionGroup(courseId, sectionId, groupId);
-      await loadGroups(courseId, sectionId);
-    } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to delete group');
-    }
-  };
-
   const handleUpdateStudent = async (
     courseId: number,
     studentId: number,
-    payload: { role?: 'student' | 'ta'; section_id?: number; group_id?: number | null }
+    payload: { role?: 'student' | 'ta' }
   ) => {
     try {
       await apiClient.updateStudentAssignment(courseId, studentId, payload);
@@ -1048,98 +960,17 @@ export default function CourseDetailPage() {
 
   const renderStudentManagement = (courseId: number) => {
     const students = courseStudents[courseId] || [];
-    const courseSections = sections[courseId] || [];
-    const selectedSection = selectedSectionId[courseId] ?? null;
-    const sectionGroups = selectedSection ? groupsBySection[selectedSection] || [] : [];
     const isLoading = loadingStudents[courseId];
     const isAdding = addingStudent[courseId];
     const error = studentError[courseId];
     const email = newStudentEmail[courseId] || '';
     const role = studentRole[courseId] || 'student';
-    const filteredStudents =
-      selectedSection === null
-        ? students
-        : students.filter((student) => student.section_id === selectedSection);
-    const groupCounts = sectionGroups.reduce<Record<number, number>>((acc, group) => {
-      acc[group.id] = filteredStudents.filter((student) => student.group_id === group.id).length;
-      return acc;
-    }, {});
-    const visibleGroups = sectionGroups.slice(0, 3);
-    const extraGroupCount = Math.max(0, sectionGroups.length - visibleGroups.length);
 
     return (
       <div className="space-y-4">
         <div>
-          <h4 className="text-base font-medium text-gray-900 mb-2">Sections</h4>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setSelectedSectionId({ ...selectedSectionId, [courseId]: null })}
-              className={`px-4 py-2 text-base rounded-full border ${
-                selectedSection === null ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-200'
-              }`}
-            >
-              All
-            </button>
-            {courseSections.map((section) => (
-              <button
-                key={section.id}
-                onClick={async () => {
-                  setSelectedSectionId({ ...selectedSectionId, [courseId]: section.id });
-                  await loadGroups(courseId, section.id);
-                }}
-                className={`px-4 py-2 text-base rounded-full border ${
-                  selectedSection === section.id
-                    ? 'bg-primary-600 text-white border-primary-600'
-                    : 'bg-white text-gray-700 border-gray-200'
-                }`}
-              >
-                {section.name}
-              </button>
-            ))}
-            <button
-              onClick={() => setShowManageSections({ ...showManageSections, [courseId]: true })}
-              className="px-4 py-2 text-base rounded-full border border-dashed border-gray-300 text-gray-600"
-            >
-              Manage Sections
-            </button>
-          </div>
-        </div>
-
-        {selectedSection !== null && (
-          <div>
-            <h4 className="text-base font-medium text-gray-900 mb-2">Groups</h4>
-            <div className="flex flex-wrap items-center gap-2">
-              {visibleGroups.map((group) => (
-                <span key={group.id} className="px-4 py-2 text-base rounded-full border border-gray-200 text-gray-700">
-                  {group.name}
-                </span>
-              ))}
-              {extraGroupCount > 0 && (
-                <span className="px-4 py-2 text-base rounded-full border border-gray-200 text-gray-600">
-                  +{extraGroupCount} groups
-                </span>
-              )}
-              {sectionGroups.length > 3 && (
-                <button
-                  onClick={() => setShowGroupsMore({ ...showGroupsMore, [courseId]: true })}
-                  className="px-4 py-2 text-base rounded-full border border-dashed border-gray-300 text-gray-600"
-                >
-                  Show More
-                </button>
-              )}
-              <button
-                onClick={() => setShowManageGroups({ ...showManageGroups, [courseId]: true })}
-              className="px-4 py-2 text-base rounded-full border border-dashed border-gray-300 text-gray-600"
-            >
-              Manage Groups
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div>
           <h4 className="text-base font-medium text-gray-900 mb-2">Add Student</h4>
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
               type="email"
               value={email}
@@ -1153,6 +984,14 @@ export default function CourseDetailPage() {
                 }
               }}
             />
+            <select
+              value={role}
+              onChange={(e) => setStudentRole({ ...studentRole, [courseId]: e.target.value as 'student' | 'ta' })}
+              className="px-4 py-2 text-base border border-gray-300 rounded-lg min-w-[100px]"
+            >
+              <option value="student">Student</option>
+              <option value="ta">TA</option>
+            </select>
             <button
               onClick={() => handleAddStudent(courseId)}
               disabled={isAdding}
@@ -1161,9 +1000,6 @@ export default function CourseDetailPage() {
               {isAdding ? 'Adding...' : 'Add'}
             </button>
           </div>
-          {selectedSection === null && (
-            <p className="mt-1 text-sm text-gray-500">Select a section to auto-assign new students.</p>
-          )}
           {error && (
             <p className="mt-1 text-sm text-red-600">{error}</p>
           )}
@@ -1171,7 +1007,7 @@ export default function CourseDetailPage() {
 
         <div>
           <h4 className="text-base font-medium text-gray-900 mb-2">
-            Enrolled Students ({filteredStudents.length})
+            Enrolled Students ({students.length})
           </h4>
           <div className="flex flex-wrap gap-2 mb-3">
             <button
@@ -1187,194 +1023,25 @@ export default function CourseDetailPage() {
               Show More
             </button>
           </div>
-            {isLoading ? (
+          {isLoading ? (
             <p className="text-sm text-gray-500">Loading...</p>
-          ) : filteredStudents.length === 0 ? (
+          ) : students.length === 0 ? (
             <p className="text-sm text-gray-500">No students enrolled yet</p>
           ) : (
             <div className="space-y-2">
-              {filteredStudents.map((student, index) => (
+              {students.map((student, index) => (
                 <div
                   key={student.student_id}
                   className="w-full flex items-center justify-between px-3 py-2 bg-white border border-gray-200 rounded text-base"
                 >
                   <span className="text-gray-500 text-sm w-6">{index + 1}.</span>
                   <span className="flex-1 text-gray-800">{student.student_email}</span>
-                  <span className="text-gray-500 text-sm">
-                    {student.section_name || 'No section'}
-                  </span>
+                  <span className="text-gray-500 text-sm">{student.role}</span>
                 </div>
               ))}
             </div>
           )}
         </div>
-
-        {showManageSections[courseId] && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-6">
-            <div className="bg-white rounded-xl shadow-xl max-w-xl w-full max-h-[90vh] overflow-y-auto p-8">
-              <div className="flex items-center justify-between mb-6">
-                <h4 className="text-xl font-semibold text-gray-900">Manage Sections</h4>
-                <button
-                  onClick={() => setShowManageSections({ ...showManageSections, [courseId]: false })}
-                  className="text-gray-400 hover:text-gray-600 text-2xl p-2"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="space-y-4">
-                {courseSections.map((section) => (
-                  <div key={section.id} className="flex items-center justify-between border border-gray-200 rounded-lg p-4">
-                    <span className="text-base text-gray-800">{section.name}</span>
-                    <button
-                      onClick={() => handleDeleteSection(courseId, section.id)}
-                      className="text-base text-red-600 hover:text-red-700 font-medium"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-                {courseSections.length === 0 && (
-                  <p className="text-base text-gray-500">No sections yet.</p>
-                )}
-                <div className="border-t border-gray-200 pt-4 space-y-3">
-                  <input
-                    type="text"
-                    value={newSectionName[courseId] || ''}
-                    onChange={(e) => setNewSectionName({ ...newSectionName, [courseId]: e.target.value })}
-                    placeholder="Section name (e.g. 541)"
-                    className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg"
-                  />
-                  <button
-                    onClick={() => handleCreateSection(courseId)}
-                    disabled={addingSection[courseId]}
-                    className="px-5 py-3 text-base bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-                  >
-                    {addingSection[courseId] ? 'Creating...' : 'Create Section'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showManageGroups[courseId] && selectedSection !== null && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-6">
-            <div className="bg-white rounded-xl shadow-xl max-w-xl w-full max-h-[90vh] overflow-y-auto p-8">
-              <div className="flex items-center justify-between mb-6">
-                <h4 className="text-xl font-semibold text-gray-900">Manage Groups</h4>
-                <button
-                  onClick={() => setShowManageGroups({ ...showManageGroups, [courseId]: false })}
-                  className="text-gray-400 hover:text-gray-600 text-2xl p-2"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="space-y-4">
-                {sectionGroups.map((group) => (
-                  <div key={group.id} className="flex items-center justify-between border border-gray-200 rounded-lg p-4">
-                    <span className="text-base text-gray-800">{group.name}</span>
-                    <button
-                      onClick={() => handleDeleteGroup(courseId, selectedSection, group.id)}
-                      className="text-base text-red-600 hover:text-red-700 font-medium"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-                {sectionGroups.length === 0 && (
-                  <p className="text-base text-gray-500">No groups yet.</p>
-                )}
-                <div className="border-t border-gray-200 pt-4 space-y-3">
-                  <input
-                    type="text"
-                    value={newGroupName[courseId] || ''}
-                    onChange={(e) => setNewGroupName({ ...newGroupName, [courseId]: e.target.value })}
-                    placeholder="Group name (e.g. Group A)"
-                    className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg"
-                  />
-                  <button
-                    onClick={() => handleCreateGroup(courseId)}
-                    disabled={addingGroup[courseId]}
-                    className="px-5 py-3 text-base bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-                  >
-                    {addingGroup[courseId] ? 'Creating...' : 'Create Group'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showGroupsMore[courseId] && selectedSection !== null && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-6">
-            <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-8">
-              <div className="flex items-center justify-between mb-6">
-                <h4 className="text-xl font-semibold text-gray-900">Groups</h4>
-                <button
-                  onClick={() => setShowGroupsMore({ ...showGroupsMore, [courseId]: false })}
-                  className="text-gray-400 hover:text-gray-600 text-2xl p-2"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="space-y-3">
-                {sectionGroups.map((group) => (
-                  <button
-                    key={group.id}
-                    onClick={() => setSelectedGroupDetail({ ...selectedGroupDetail, [courseId]: { id: group.id, name: group.name } })}
-                    className="w-full flex items-center justify-between px-4 py-3 border border-gray-200 rounded-lg text-base hover:border-primary-300"
-                  >
-                    <span className="text-gray-800">{group.name}</span>
-                    <span className="text-gray-500 text-sm">({groupCounts[group.id] || 0})</span>
-                  </button>
-                ))}
-                {sectionGroups.length === 0 && (
-                  <p className="text-base text-gray-500">No groups yet.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {selectedGroupDetail[courseId] && selectedSection !== null && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-6">
-            <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-8">
-              <div className="flex items-center justify-between mb-6">
-                <h4 className="text-xl font-semibold text-gray-900">
-                  {selectedGroupDetail[courseId]!.name}
-                </h4>
-                <button
-                  onClick={() => setSelectedGroupDetail({ ...selectedGroupDetail, [courseId]: null })}
-                  className="text-gray-400 hover:text-gray-600 text-2xl p-2"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">#</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Name</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">ID</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredStudents
-                      .filter((student) => student.group_id === selectedGroupDetail[courseId]!.id)
-                      .map((student, index) => (
-                        <tr key={student.student_id}>
-                          <td className="px-4 py-3 text-base text-gray-500">{index + 1}</td>
-                          <td className="px-4 py-3 text-base text-gray-900">{student.student_email}</td>
-                          <td className="px-4 py-3 text-base text-gray-600">{student.student_id}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
 
         {showManageStudents[courseId] && (
           <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-6">
@@ -1394,55 +1061,16 @@ export default function CourseDetailPage() {
                     <tr>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">#</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Email</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Section</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Group</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Role</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Activity</th>
                       <th className="px-4 py-3" />
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredStudents.map((student, index) => (
+                    {students.map((student, index) => (
                       <tr key={student.student_id}>
                         <td className="px-4 py-3 text-base text-gray-500">{index + 1}</td>
                         <td className="px-4 py-3 text-base text-gray-900">{student.student_email}</td>
-                        <td className="px-4 py-3">
-                          <select
-                            value={student.section_id ?? ''}
-                            onChange={async (e) => {
-                              const nextSectionId = Number(e.target.value);
-                              await handleUpdateStudent(courseId, student.student_id, { section_id: nextSectionId, group_id: null });
-                              await loadGroups(courseId, nextSectionId);
-                              await loadCourseStudents(courseId);
-                            }}
-                            className="px-3 py-2 text-base border border-gray-300 rounded-lg min-w-[120px]"
-                          >
-                            {courseSections.map((section) => (
-                              <option key={section.id} value={section.id}>
-                                {section.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-4 py-3">
-                          <select
-                            value={student.group_id ?? ''}
-                            onChange={async (e) => {
-                              await handleUpdateStudent(courseId, student.student_id, {
-                                group_id: e.target.value ? Number(e.target.value) : null,
-                              });
-                              await loadCourseStudents(courseId);
-                            }}
-                            className="px-3 py-2 text-base border border-gray-300 rounded-lg min-w-[120px]"
-                          >
-                            <option value="">None</option>
-                            {(groupsBySection[student.section_id || 0] || []).map((group) => (
-                              <option key={group.id} value={group.id}>
-                                {group.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
                         <td className="px-4 py-3">
                           <select
                             value={student.role}
@@ -1499,19 +1127,15 @@ export default function CourseDetailPage() {
                     <tr>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">#</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Email</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Section</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Group</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Role</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase">Activity</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredStudents.map((student, index) => (
+                    {students.map((student, index) => (
                       <tr key={student.student_id}>
                         <td className="px-4 py-3 text-base text-gray-500">{index + 1}</td>
                         <td className="px-4 py-3 text-base text-gray-900">{student.student_email}</td>
-                        <td className="px-4 py-3 text-base text-gray-700">{student.section_name || 'No section'}</td>
-                        <td className="px-4 py-3 text-base text-gray-700">{student.group_name || 'None'}</td>
                         <td className="px-4 py-3 text-base text-gray-700">{student.role}</td>
                         <td className="px-4 py-3 text-base text-gray-600">
                           {student.questions_count} q{student.questions_count === 1 ? '' : 's'}
@@ -1788,13 +1412,8 @@ export default function CourseDetailPage() {
                       setCollapseManageStudents({ ...collapseManageStudents, [course.id]: nextCollapsed });
                       if (!nextCollapsed) {
                         await loadCourseStudents(course.id);
-                        await loadSections(course.id);
                         await loadAnnouncements(course.id);
                         await loadUploadRequests(course.id);
-                        const sectionId = selectedSectionId[course.id];
-                        if (sectionId) {
-                          await loadGroups(course.id, sectionId);
-                        }
                       }
                     }}
                     className="w-full px-6 py-4 flex items-center justify-between text-left"
@@ -2016,45 +1635,70 @@ export default function CourseDetailPage() {
                     </span>
                   </button>
                   {!collapseAskQuestions[course.id] && (
-                    <div className="px-6 pb-6">
-                      <form onSubmit={handleCourseQuery} className="space-y-4">
-                        <div>
+                    <div className="flex flex-col min-h-[320px] max-h-[560px]">
+                      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+                        {courseChatMessages.length === 0 && !courseAsking && (
+                          <div className="text-center py-8 text-gray-500">
+                            <p className="text-base">Ask a question about the course content.</p>
+                            <p className="text-sm mt-1">Answers will appear here in a chat thread.</p>
+                          </div>
+                        )}
+                        {courseChatMessages.map((msg, idx) => (
+                          <div key={idx} className="space-y-2">
+                            <div className="flex justify-end">
+                              <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary-600 text-white px-4 py-2.5">
+                                <p className="text-base whitespace-pre-wrap">{msg.question}</p>
+                              </div>
+                            </div>
+                            <div className="flex justify-start">
+                              <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-gray-100 text-gray-900 px-4 py-2.5 border border-gray-200">
+                                {msg.answer ? (
+                                  <div className="prose prose-sm max-w-none">
+                                    <p className="text-base whitespace-pre-wrap">{msg.answer.answer}</p>
+                                    {renderSources(msg.answer.sources)}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2 text-gray-500">
+                                    <svg className="w-5 h-5 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                    </svg>
+                                    <span className="text-sm">Thinking...</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        <div ref={courseChatEndRef} />
+                      </div>
+                      <div className="border-t border-gray-200 bg-gray-50/80 px-6 py-4">
+                        {queryError && (
+                          <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                            {queryError}
+                          </div>
+                        )}
+                        <form onSubmit={handleCourseQuery} className="flex gap-3 items-end">
                           <textarea
                             value={courseQuestion}
                             onChange={(e) => setCourseQuestion(e.target.value)}
                             placeholder="Ask a question about the course content..."
-                            rows={4}
-                            className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
+                            rows={2}
+                            className="flex-1 px-4 py-3 text-base border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none bg-white"
                             disabled={courseAsking || course.lecture_count === 0}
                           />
-                            {course.lecture_count === 0 && (
-                            <p className="mt-2 text-base text-gray-500">
-                              Upload at least one lecture to ask questions.
-                            </p>
-                          )}
-                        </div>
-                        {queryError && (
-                          <div className="text-base text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
-                            {queryError}
-                          </div>
+                          <button
+                            type="submit"
+                            disabled={courseAsking || !courseQuestion.trim() || course.lecture_count === 0}
+                            className="px-5 py-3 text-base bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+                          >
+                            {courseAsking ? '…' : 'Send'}
+                          </button>
+                        </form>
+                        {course.lecture_count === 0 && (
+                          <p className="mt-2 text-sm text-gray-500">Upload at least one lecture to ask questions.</p>
                         )}
-                        <button
-                          type="submit"
-                          disabled={courseAsking || !courseQuestion.trim() || course.lecture_count === 0}
-                          className="w-full px-4 py-3 text-base bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        >
-                          {courseAsking ? 'Asking...' : 'Ask Question'}
-                        </button>
-                      </form>
-
-                      {courseAnswer && (
-                        <div className="mt-6 pt-6 border-t border-gray-200">
-                          <div className="prose max-w-none">
-                            <p className="text-base text-gray-800 whitespace-pre-wrap">{courseAnswer.answer}</p>
-                            {renderSources(courseAnswer.sources)}
-                          </div>
-                        </div>
-                      )}
+                      </div>
                     </div>
                   )}
                 </div>
