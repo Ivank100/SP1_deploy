@@ -5,9 +5,14 @@ from .db import search_similar, search_by_keywords, insert_query
 from .embedding_model import embed_texts
 from .citation_utils import format_citations
 
-SYSTEM_PROMPT = """You are a helpful assistant answering questions based only on the provided context from PDF lectures.
-If the answer is not in the context, say you don't know.
-Do not include page numbers or source references in your answer — citations are handled separately."""
+SYSTEM_PROMPT = """You are a helpful assistant for students studying lecture material.
+You are given context extracted from lecture slides or PDFs. Use this context as your primary source.
+If the answer is not covered in the context, answer using your general knowledge — do not refuse or say you don't know.
+Do not include page numbers or source references in your answer — citations are handled separately.
+
+IMPORTANT: Start your response with exactly one of these two tags (then a newline), before writing anything else:
+[FROM_SLIDES] — if your answer is based on the provided lecture context
+[GENERAL] — if your answer is based on your general knowledge because the context did not cover the question"""
 
 STOP_WORDS = {
     "the", "a", "an", "is", "are", "to", "of", "in", "on", "for", "and", "or", "with",
@@ -64,7 +69,15 @@ def answer_question(
             )
     
     if not results:
-        answer = "I couldn't find any relevant information in the lecture materials."
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": f"Context from lecture:\n(No relevant lecture content found)\n\nQuestion: {question}"},
+        ]
+        answer = client.chat(messages)
+        if answer.startswith("[FROM_SLIDES]"):
+            answer = answer[len("[FROM_SLIDES]"):].lstrip("\n")
+        elif answer.startswith("[GENERAL]"):
+            answer = answer[len("[GENERAL]"):].lstrip("\n")
         insert_query(question, answer, lecture_id, course_id, user_id, None)
         return answer, "", []
     
@@ -90,25 +103,33 @@ def answer_question(
         {"role": "user", "content": f"Context from lecture:\n{context_text}\n\nQuestion: {question}"},
     ]
     answer = client.chat(messages)
-    
-    # 4) format citations
-    citation = format_citations(sources)
-    
-    # 5) append citation to answer if available
+
+    # 4) strip the source tag and decide whether to show citations
+    used_slides = True
+    if answer.startswith("[FROM_SLIDES]"):
+        answer = answer[len("[FROM_SLIDES]"):].lstrip("\n")
+    elif answer.startswith("[GENERAL]"):
+        answer = answer[len("[GENERAL]"):].lstrip("\n")
+        used_slides = False
+
+    # 5) format and attach citations only when the answer came from the slides
+    citation = format_citations(sources) if used_slides else ""
+
     if citation:
         answer_with_citation = f"{answer}\n\n{citation}"
     else:
         answer_with_citation = answer
-    
+
     # 6) store question and answer in database
     page_number = None
-    for source in sources:
-        if source.get("page_number") is not None:
-            if lecture_id is None or source.get("lecture_id") == lecture_id:
-                page_number = source.get("page_number")
-                break
+    if used_slides:
+        for source in sources:
+            if source.get("page_number") is not None:
+                if lecture_id is None or source.get("lecture_id") == lecture_id:
+                    page_number = source.get("page_number")
+                    break
     insert_query(question, answer_with_citation, lecture_id, course_id, user_id, page_number)
-    
+
     return answer_with_citation, citation, sources
 
 if __name__ == "__main__":

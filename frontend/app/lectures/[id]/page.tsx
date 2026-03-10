@@ -906,7 +906,7 @@ export default function LecturePage() {
                         onClick={() => replaceFileInputRef.current?.click()}
                         className="px-4 py-3 text-base border border-gray-300 rounded-lg hover:bg-gray-50"
                       >
-                        Replace PDF
+                        Replace Material
                       </button>
                       <button
                         type="button"
@@ -1016,7 +1016,7 @@ export default function LecturePage() {
                   <div className="px-6 pb-6 space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        {(['all', 'answered', 'unanswered', 'flagged'] as const).map((filter) => (
+                        {(['all', 'flagged'] as const).map((filter) => (
                           <button
                             key={filter}
                             type="button"
@@ -1027,7 +1027,7 @@ export default function LecturePage() {
                                 : 'bg-white text-gray-700 border-gray-200'
                             }`}
                           >
-                            {filter === 'all' ? 'All' : filter === 'answered' ? 'Answered' : filter === 'unanswered' ? 'Unanswered' : 'Flagged'}
+                            {filter === 'all' ? 'All' : 'Flagged'}
                           </button>
                         ))}
                         <button
@@ -1076,9 +1076,6 @@ export default function LecturePage() {
                                     <span>{formatHistoryTime(item.created_at)}</span>
                                   </div>
                                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                                    <span className={`px-2 py-0.5 rounded-full text-sm border ${isAnswered ? 'bg-green-50 text-green-700 border-green-100' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                                      {isAnswered ? 'Answered' : 'Unanswered'}
-                                    </span>
                                     {isFlagged && (
                                       <span className="px-2 py-0.5 rounded-full text-sm border bg-amber-50 text-amber-700 border-amber-200">
                                         FAQ
@@ -1139,12 +1136,36 @@ export default function LecturePage() {
                               )}
                               {activeAnswerId === item.id && (
                                 <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-sm font-medium text-gray-700">Edit Answer</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveAnswerId(null)}
+                                      className="text-sm text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-200"
+                                    >
+                                      Collapse
+                                    </button>
+                                  </div>
                                   <textarea
                                     value={answerDrafts[item.id] ?? ''}
-                                    onChange={(e) =>
-                                      setAnswerDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))
-                                    }
-                                    rows={3}
+                                    onChange={(e) => {
+                                      setAnswerDrafts((prev) => ({ ...prev, [item.id]: e.target.value }));
+                                      e.target.style.height = 'auto';
+                                      e.target.style.height = e.target.scrollHeight + 'px';
+                                    }}
+                                    onInput={(e) => {
+                                      const el = e.currentTarget;
+                                      el.style.height = 'auto';
+                                      el.style.height = el.scrollHeight + 'px';
+                                    }}
+                                    ref={(el) => {
+                                      if (el) {
+                                        el.style.height = 'auto';
+                                        el.style.height = el.scrollHeight + 'px';
+                                      }
+                                    }}
+                                    rows={1}
+                                    style={{ resize: 'none', overflow: 'hidden', minHeight: '3rem' }}
                                     className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                                     placeholder="Write an instructor note or answer..."
                                   />
