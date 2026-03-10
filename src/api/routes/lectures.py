@@ -36,7 +36,7 @@ router = APIRouter(prefix="/api/lectures", tags=["lectures"])
 
 # Maximum file size: 50MB
 MAX_FILE_SIZE = 50 * 1024 * 1024
-PDF_EXTENSIONS = {".pdf"}
+PDF_EXTENSIONS = {".pdf", ".docx"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a"}
 SLIDE_EXTENSIONS = {".pptx", ".ppt"}
 ALLOWED_EXTENSIONS = PDF_EXTENSIONS | AUDIO_EXTENSIONS | SLIDE_EXTENSIONS
@@ -50,7 +50,7 @@ async def process_lecture_upload(file: UploadFile, course_id: Optional[int] = No
     if file_ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file type. Allowed: PDF, MP3, WAV, M4A.",
+            detail="Invalid file type. Allowed: PDF, DOCX, MP3, WAV, M4A, PPT, PPTX.",
         )
     
     # Read file content
@@ -357,7 +357,7 @@ async def replace_lecture_file(
 
     file_ext = Path(file.filename or "").suffix.lower()
     if file_ext not in PDF_EXTENSIONS:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF replacement is supported")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF/DOCX replacement is supported")
 
     contents = await file.read()
     if len(contents) > MAX_FILE_SIZE:

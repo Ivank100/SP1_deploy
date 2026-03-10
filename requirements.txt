@@ -1,10 +1,9 @@
 python-dotenv
 psycopg[binary]
-pymupdf
+docling
 requests
 sentence-transformers
 scikit-learn
-python-pptx
 python-jose[cryptography]
 passlib[bcrypt]==1.7.4
 python-multipart

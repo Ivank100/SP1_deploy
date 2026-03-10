@@ -5,9 +5,9 @@ from .db import search_similar, search_by_keywords, insert_query
 from .embedding_model import embed_texts
 from .citation_utils import format_citations
 
-SYSTEM_PROMPT = """You are a helpful assistant answering questions based only on the provided context from PDF lectures. 
+SYSTEM_PROMPT = """You are a helpful assistant answering questions based only on the provided context from PDF lectures.
 If the answer is not in the context, say you don't know.
-When referencing information, mention the page numbers, and if multiple lectures are involved, name the lecture alongside the page."""
+Do not include page numbers or source references in your answer — citations are handled separately."""
 
 STOP_WORDS = {
     "the", "a", "an", "is", "are", "to", "of", "in", "on", "for", "and", "or", "with",

@@ -1,33 +1,46 @@
-"""Utilities for parsing slide decks (PPT/PPTX) into text with slide numbers."""
+"""Utilities for parsing slide decks (PPT/PPTX) into text with slide numbers using Docling."""
+from collections import defaultdict
 from typing import List, Tuple
 
-from pptx import Presentation
-
-from .pdf_utils import chunk_text_with_pages
+from .pdf_utils import _get_converter, chunk_text_with_pages
 
 
 def extract_text_with_slides(path: str) -> List[Tuple[str, int]]:
     """
-    Extract text content from each slide in a PowerPoint file.
+    Extract text content from each slide in a PowerPoint file using Docling.
+
+    Docling maps each slide to a page_no in element provenance, so slide numbers
+    are recovered the same way as PDF page numbers.
 
     Returns a list of (text, slide_number) tuples.
     """
-    prs = Presentation(path)
-    slides: List[Tuple[str, int]] = []
+    result = _get_converter().convert(path)
+    doc = result.document
 
-    for slide_idx, slide in enumerate(prs.slides, start=1):
-        texts: List[str] = []
-        for shape in slide.shapes:
-            if not hasattr(shape, "text"):
-                continue
-            text = (shape.text or "").strip()
+    slides_text: dict[int, list[str]] = defaultdict(list)
+
+    for item in doc.texts:
+        if item.prov:
+            slide_no = item.prov[0].page_no
+            text = item.text.strip()
             if text:
-                texts.append(text)
+                slides_text[slide_no].append(text)
 
-        if texts:
-            slides.append(("\n".join(texts), slide_idx))
+    for table in doc.tables:
+        if table.prov:
+            slide_no = table.prov[0].page_no
+            try:
+                table_md = table.export_to_markdown()
+                if table_md.strip():
+                    slides_text[slide_no].append(table_md)
+            except Exception:
+                pass
 
-    return slides
+    return [
+        ("\n".join(texts), slide_no)
+        for slide_no, texts in sorted(slides_text.items())
+        if texts
+    ]
 
 
 def chunk_text_with_slides(
@@ -42,5 +55,3 @@ def chunk_text_with_slides(
     analogously to page numbers.
     """
     return chunk_text_with_pages(slide_texts, max_chars=max_chars, overlap=overlap)
-
-

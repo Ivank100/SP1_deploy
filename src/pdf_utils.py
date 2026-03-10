@@ -1,38 +1,69 @@
 # src/pdf_utils.py
-import fitz  # PyMuPDF
+from collections import defaultdict
 from typing import List, Tuple
+
+from docling.document_converter import DocumentConverter
+
+_converter: DocumentConverter | None = None
+
+
+def _get_converter() -> DocumentConverter:
+    """Return a module-level singleton DocumentConverter (lazy init)."""
+    global _converter
+    if _converter is None:
+        _converter = DocumentConverter()
+    return _converter
+
 
 def extract_text_from_pdf(path: str) -> str:
     """Legacy function: extract all text without page tracking."""
-    doc = fitz.open(path)
-    texts = []
-    for page in doc:
-        texts.append(page.get_text())
-    doc.close()
-    return "\n".join(texts)
+    result = _get_converter().convert(path)
+    return result.document.export_to_text()
+
 
 def extract_text_with_pages(path: str) -> List[Tuple[str, int]]:
     """
-    Extract text from PDF with page number tracking.
-    
+    Extract text from a PDF or DOCX file with page number tracking.
+
     Returns:
-        List of (text, page_number) tuples
+        List of (text, page_number) tuples, one entry per page that has content.
     """
-    doc = fitz.open(path)
-    pages = []
-    for page_num, page in enumerate(doc, start=1):
-        text = page.get_text()
-        if text.strip():  # Only include non-empty pages
-            pages.append((text, page_num))
-    doc.close()
-    return pages
+    result = _get_converter().convert(path)
+    doc = result.document
+
+    pages_text: dict[int, list[str]] = defaultdict(list)
+
+    # Collect text items grouped by page
+    for item in doc.texts:
+        if item.prov:
+            page_no = item.prov[0].page_no
+            text = item.text.strip()
+            if text:
+                pages_text[page_no].append(text)
+
+    # Collect tables (exported as markdown) grouped by page
+    for table in doc.tables:
+        if table.prov:
+            page_no = table.prov[0].page_no
+            try:
+                table_md = table.export_to_markdown()
+                if table_md.strip():
+                    pages_text[page_no].append(table_md)
+            except Exception:
+                pass
+
+    return [
+        ("\n".join(texts), page_no)
+        for page_no, texts in sorted(pages_text.items())
+        if texts
+    ]
+
 
 def chunk_text(text: str, max_chars: int = 1500, overlap: int = 200) -> List[str]:
     """Legacy function: chunk text without page tracking."""
     chunks = []
     start = 0
 
-    # guard: avoid bad parameters
     if max_chars <= 0:
         raise ValueError("max_chars must be > 0")
     if overlap >= max_chars:
@@ -42,64 +73,52 @@ def chunk_text(text: str, max_chars: int = 1500, overlap: int = 200) -> List[str
         end = min(len(text), start + max_chars)
         chunks.append(text[start:end])
 
-        # if we've reached the end, stop
         if end >= len(text):
             break
 
-        # move start forward with overlap
         start = end - overlap
 
     return chunks
 
-def chunk_text_with_pages(text_pages: List[Tuple[str, int]], 
-                          max_chars: int = 1500, 
+
+def chunk_text_with_pages(text_pages: List[Tuple[str, int]],
+                          max_chars: int = 1500,
                           overlap: int = 200) -> List[Tuple[str, int]]:
     """
     Chunk text from multiple pages, preserving page numbers.
-    
+
+    Chunks within each page independently so that every chunk is labeled
+    with the page it actually came from.
+
     Args:
         text_pages: List of (text, page_number) tuples
         max_chars: Maximum characters per chunk
-        overlap: Overlap between chunks in characters
-        
+        overlap: Overlap between consecutive chunks within the same page
+
     Returns:
-        List of (chunk_text, page_number) tuples
-        If a chunk spans multiple pages, uses the starting page number
+        List of (chunk_text, page_number) tuples.
     """
     if max_chars <= 0:
         raise ValueError("max_chars must be > 0")
     if overlap >= max_chars:
         raise ValueError("overlap must be < max_chars")
-    
+
     chunks = []
-    
-    # Combine all pages into one text with page markers
-    combined_text = ""
-    page_map = []  # Maps character position to page number
-    
+
     for text, page_num in text_pages:
-        start_pos = len(combined_text)
-        combined_text += text + "\n"
-        # Map all characters in this page to this page number
-        for i in range(len(text) + 1):  # +1 for the newline
-            page_map.append(page_num)
-    
-    # Now chunk the combined text
-    start = 0
-    while start < len(combined_text):
-        end = min(len(combined_text), start + max_chars)
-        chunk_text = combined_text[start:end]
-        
-        # Get the page number for the start of this chunk
-        chunk_page = page_map[start] if start < len(page_map) else page_map[-1] if page_map else 1
-        
-        chunks.append((chunk_text.strip(), chunk_page))
-        
-        # If we've reached the end, stop
-        if end >= len(combined_text):
-            break
-        
-        # Move start forward with overlap
-        start = end - overlap
-    
+        text = text.strip()
+        if not text:
+            continue
+
+        if len(text) <= max_chars:
+            chunks.append((text, page_num))
+        else:
+            start = 0
+            while start < len(text):
+                end = min(len(text), start + max_chars)
+                chunks.append((text[start:end].strip(), page_num))
+                if end >= len(text):
+                    break
+                start = end - overlap
+
     return chunks
