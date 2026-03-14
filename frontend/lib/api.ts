@@ -15,9 +15,6 @@ api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('auth_token');
     if (token) {
-      if (!config.headers) {
-        config.headers = {};
-      }
       config.headers.Authorization = `Bearer ${token}`;
     } else {
       console.warn('No auth token found in localStorage');
