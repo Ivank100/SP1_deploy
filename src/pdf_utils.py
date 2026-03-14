@@ -3,45 +3,40 @@ from collections import defaultdict
 from typing import List, Tuple
 
 from docling.document_converter import DocumentConverter
+from docling.datamodel.pipeline_options import PdfPipelineOptions
 
-_converter: DocumentConverter | None = None
+_converter_no_ocr: DocumentConverter | None = None
+_converter_ocr: DocumentConverter | None = None
 
 
-def _get_converter() -> DocumentConverter:
-    """Return a module-level singleton DocumentConverter (lazy init)."""
-    global _converter
-    if _converter is None:
-        _converter = DocumentConverter()
-    return _converter
+def _get_converter(ocr: bool = False) -> DocumentConverter:
+    global _converter_no_ocr, _converter_ocr
+    if not ocr:
+        if _converter_no_ocr is None:
+            _converter_no_ocr = DocumentConverter(
+                pipeline_options=PdfPipelineOptions(do_ocr=False)
+            )
+        return _converter_no_ocr
+    else:
+        if _converter_ocr is None:
+            _converter_ocr = DocumentConverter()
+        return _converter_ocr
 
 
 def extract_text_from_pdf(path: str) -> str:
     """Legacy function: extract all text without page tracking."""
-    result = _get_converter().convert(path)
+    result = _get_converter(ocr=False).convert(path)
     return result.document.export_to_text()
 
 
-def extract_text_with_pages(path: str) -> List[Tuple[str, int]]:
-    """
-    Extract text from a PDF or DOCX file with page number tracking.
-
-    Returns:
-        List of (text, page_number) tuples, one entry per page that has content.
-    """
-    result = _get_converter().convert(path)
-    doc = result.document
-
+def _extract_pages_from_doc(doc) -> dict:
     pages_text: dict[int, list[str]] = defaultdict(list)
-
-    # Collect text items grouped by page
     for item in doc.texts:
         if item.prov:
             page_no = item.prov[0].page_no
             text = item.text.strip()
             if text:
                 pages_text[page_no].append(text)
-
-    # Collect tables (exported as markdown) grouped by page
     for table in doc.tables:
         if table.prov:
             page_no = table.prov[0].page_no
@@ -51,6 +46,23 @@ def extract_text_with_pages(path: str) -> List[Tuple[str, int]]:
                     pages_text[page_no].append(table_md)
             except Exception:
                 pass
+    return pages_text
+
+
+def extract_text_with_pages(path: str) -> List[Tuple[str, int]]:
+    """
+    Extract text from a PDF or DOCX file with page number tracking.
+    Tries native text extraction first; falls back to OCR if no text found.
+
+    Returns:
+        List of (text, page_number) tuples, one entry per page that has content.
+    """
+    doc = _get_converter(ocr=False).convert(path).document
+    pages_text = _extract_pages_from_doc(doc)
+
+    if not pages_text:
+        doc = _get_converter(ocr=True).convert(path).document
+        pages_text = _extract_pages_from_doc(doc)
 
     return [
         ("\n".join(texts), page_no)
