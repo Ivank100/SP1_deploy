@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from ..config import UPLOAD_DIR
+from ..core.config import UPLOAD_DIR
 from .routes import audio, auth, courses, instructor, lectures, queries, slides, study_materials
 
 app = FastAPI(

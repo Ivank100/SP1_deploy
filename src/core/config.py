@@ -3,31 +3,30 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# API Keys - REQUIRED (no defaults for security)
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-if DEEPSEEK_API_KEY is not None:
-    DEEPSEEK_API_KEY = DEEPSEEK_API_KEY.strip()
-if not DEEPSEEK_API_KEY:
-    raise ValueError("DEEPSEEK_API_KEY environment variable is required")
-
-DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL")
-if DEEPSEEK_BASE_URL is not None:
-    DEEPSEEK_BASE_URL = DEEPSEEK_BASE_URL.strip()
-if not DEEPSEEK_BASE_URL:
-    raise ValueError("DEEPSEEK_BASE_URL environment variable is required")
-
-# Chat model (e.g. openrouter/auto for OpenRouter, gpt-4o-mini / gpt-4o for OpenAI)
-LLM_CHAT_MODEL = os.getenv("LLM_CHAT_MODEL", "openrouter/auto")
-if LLM_CHAT_MODEL is not None:
-    LLM_CHAT_MODEL = LLM_CHAT_MODEL.strip()
-
-# OpenAI API (optional - only needed if using Whisper API instead of local)
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Optional - local Whisper is used if not set
+# OpenAI-compatible API configuration used for chat, embeddings, and optional Whisper.
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if OPENAI_API_KEY is not None:
     OPENAI_API_KEY = OPENAI_API_KEY.strip()
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY environment variable is required")
+
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 if OPENAI_BASE_URL is not None:
     OPENAI_BASE_URL = OPENAI_BASE_URL.strip()
+if not OPENAI_BASE_URL:
+    raise ValueError("OPENAI_BASE_URL environment variable is required")
+
+# Chat model (e.g. gpt-4o-mini for OpenAI or another OpenAI-compatible provider)
+LLM_CHAT_MODEL = os.getenv("LLM_CHAT_MODEL", "gpt-4o-mini")
+if LLM_CHAT_MODEL is not None:
+    LLM_CHAT_MODEL = LLM_CHAT_MODEL.strip()
+
+# Embedding model used for chunk and query vectors.
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+if EMBEDDING_MODEL is not None:
+    EMBEDDING_MODEL = EMBEDDING_MODEL.strip()
+
+# Whisper API settings. The same OpenAI key/base URL above are reused if local Whisper is unavailable.
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "whisper-1")
 
 # Database Configuration - REQUIRED (no defaults for security)

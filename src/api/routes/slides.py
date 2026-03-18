@@ -2,7 +2,7 @@ from collections import defaultdict
 
 from fastapi import APIRouter, HTTPException, status
 
-from ...db import get_chunks_for_lecture, get_lecture
+from ...db.postgres import get_chunks_for_lecture, get_lecture
 from ..models import ErrorResponse
 
 router = APIRouter(prefix="/api/lectures", tags=["slides"])

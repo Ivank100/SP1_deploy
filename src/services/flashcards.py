@@ -8,9 +8,9 @@ import random
 from typing import List, Dict, Any, Tuple, Optional, Set
 import numpy as np
 
-from .deepseek_client import DeepSeekClient
-from .embedding_model import embed_texts
-from .db import (
+from ..clients.openai import OpenAIClient
+from .embeddings import embed_texts
+from ..db.postgres import (
     get_lecture,
     get_lecture_study_materials,
     get_previous_flashcard_questions,
@@ -18,7 +18,7 @@ from .db import (
     search_similar,
 )
 from .study_materials import generate_key_points as _generate_key_points
-from .config import FLASHCARD_COUNT_MIN, FLASHCARD_COUNT_MAX
+from ..core.config import FLASHCARD_COUNT_MIN, FLASHCARD_COUNT_MAX
 
 
 # Hard limits - relaxed for better study cards
@@ -514,7 +514,7 @@ def generate_flashcard_candidates(
     Returns list of candidate dicts with question, answer, keypoint_index.
     When chunks_per_keypoint is provided, answers are grounded in those excerpts.
     """
-    client = DeepSeekClient()
+    client = OpenAIClient()
     
     # Format key points for prompt (with optional context excerpts)
     parts = []
@@ -608,7 +608,7 @@ def fill_missing_flashcards(
     chunks_per_keypoint: Optional[Dict[int, List[str]]] = None,
 ) -> List[Dict[str, Any]]:
     """Generate additional flashcards to fill missing slots."""
-    client = DeepSeekClient()
+    client = OpenAIClient()
     
     existing_questions = [c.get("question", "") for c in already_selected]
     parts = []
@@ -711,7 +711,7 @@ def _generate_flashcards_from_chunks(
         chunk_refs.append(ref)
 
     context = "\n\n".join(context_parts)
-    client = DeepSeekClient()
+    client = OpenAIClient()
 
     existing_text = ""
     if existing_questions:
@@ -979,7 +979,7 @@ def generate_flashcards_v2(
 def _expand_keypoint_to_answer(keypoint: str, question: str) -> str:
     """Use LLM to create an informative answer from a keypoint when fallback is needed."""
     try:
-        client = DeepSeekClient()
+        client = OpenAIClient()
         messages = [
             {
                 "role": "system",

@@ -3,8 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
-from ...db import create_user, get_user_by_email, add_user_to_course
-from ...auth_utils import verify_password, get_password_hash, create_access_token
+from ...db.postgres import create_user, get_user_by_email, add_user_to_course
+from ...core.auth import verify_password, get_password_hash, create_access_token
 from ..middleware.auth import get_current_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])

@@ -2,7 +2,8 @@
 from fastapi import APIRouter, HTTPException, Query, status, Depends
 from typing import Optional, List
 
-from ...analytics import (
+from ...db.postgres import get_instructor_assigned_course_ids
+from ...services.analytics import (
     cluster_questions,
     get_query_trends,
     get_lecture_health_metrics,
@@ -16,26 +17,7 @@ router = APIRouter(prefix="/api/instructor", tags=["instructor"])
 
 def get_instructor_assigned_courses(instructor_id: int) -> Optional[List[int]]:
     """Get list of course IDs assigned to an instructor, or None if no assignments exist."""
-    from ...db import get_conn, init_schema
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        # Check if any assignments exist
-        cur.execute("SELECT COUNT(*) FROM course_instructors")
-        has_assignments = cur.fetchone()[0] > 0
-        
-        if not has_assignments:
-            return None  # No assignments, show all
-        
-        # Get assigned course IDs
-        cur.execute(
-            """
-            SELECT course_id FROM course_instructors
-            WHERE instructor_id = %s
-            """,
-            (instructor_id,),
-        )
-        assigned_course_ids = [row[0] for row in cur.fetchall()]
-        return assigned_course_ids if assigned_course_ids else []
+    return get_instructor_assigned_course_ids(instructor_id)
 
 
 @router.get("/analytics/query-clusters")
@@ -236,4 +218,3 @@ async def list_all_queries(
         "queries": queries,
         "total": len(queries),
     }
-

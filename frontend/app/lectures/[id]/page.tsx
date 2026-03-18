@@ -1213,8 +1213,8 @@ export default function LecturePage() {
             </div>
           </div>
           ) : (
-            <div className="flex-1 flex">
-              <aside className="w-80 border-r border-gray-200 bg-white p-4 space-y-4">
+            <div className="flex-1 flex min-h-0">
+              <aside className="w-80 border-r border-gray-200 bg-white p-4 space-y-4 overflow-y-auto">
                 <div>
                   <h3 className="text-xl font-semibold text-gray-900">Study Tools</h3>
                   <p className="text-sm text-gray-500">Generate learning aids for this lecture.</p>
@@ -1331,9 +1331,9 @@ export default function LecturePage() {
                 </div>
               </aside>
 
-              <div className="flex-1 flex flex-col">
+              <div className="flex-1 flex flex-col min-h-0 h-[calc(100vh-9rem)]">
                 {/* Messages */}
-                <div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+                <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
                   {chatMessageList.length === 0 && !currentAnswer && !asking && (
                     <div className="text-center py-12">
                       <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1454,7 +1454,7 @@ export default function LecturePage() {
                 </div>
 
                 {/* Input Area */}
-                <div className="border-t border-gray-200 bg-white px-4 sm:px-6 lg:px-8 py-4">
+                <div className="shrink-0 border-t border-gray-200 bg-white px-4 sm:px-6 lg:px-8 py-4">
                   <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
                     <div className="flex items-end space-x-4">
                       <div className="flex-1">
@@ -1493,4 +1493,3 @@ export default function LecturePage() {
     </div>
   );
 }
-

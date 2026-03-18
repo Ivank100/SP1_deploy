@@ -11,7 +11,7 @@ This script:
 Run this once after upgrading to v1 schema.
 """
 import sys
-from .db import get_conn, init_schema
+from src.db.postgres import get_conn, init_schema
 
 def migrate():
     """Migrate data from document_chunks to lectures + chunks."""
@@ -86,4 +86,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"[ERROR] Migration failed: {e}")
         sys.exit(1)
-

@@ -3,7 +3,7 @@ import re
 import random
 from typing import List, Dict, Any, Tuple, Optional
 
-from .db import (
+from ..db.postgres import (
     get_lecture,
     get_chunks_for_lecture,
     save_lecture_summary,
@@ -12,7 +12,7 @@ from .db import (
     list_flashcards,
     get_lecture_study_materials,
 )
-from .deepseek_client import DeepSeekClient
+from ..clients.openai import OpenAIClient
 
 MAX_CONTEXT_CHUNKS = 40
 
@@ -63,7 +63,7 @@ def _fallback_keypoints_repair(context: str) -> List[str]:
     When JSON parsing fails, use LLM repair prompt instead of random sentence truncation.
     Produces higher quality key points than the old fallback.
     """
-    client = DeepSeekClient()
+    client = OpenAIClient()
     messages = [
         {"role": "system", "content": "You extract study-relevant key points from lecture text. Output ONLY a JSON array of strings. Each item: noun phrase or short concept (3-10 words). No full sentences."},
         {"role": "user", "content": (
@@ -202,7 +202,7 @@ def get_materials(lecture_id: int) -> Dict[str, Any]:
 def generate_summary(lecture_id: int) -> str:
     _ensure_ready_lecture(lecture_id)
     context, _ = _prepare_context(lecture_id)
-    client = DeepSeekClient()
+    client = OpenAIClient()
     messages = [
         {
             "role": "system",
@@ -225,7 +225,7 @@ def generate_summary(lecture_id: int) -> str:
 def generate_key_points(lecture_id: int) -> List[str]:
     _ensure_ready_lecture(lecture_id)
     context, _ = _prepare_context(lecture_id)
-    client = DeepSeekClient()
+    client = OpenAIClient()
     messages = [
         {
             "role": "system",
@@ -292,7 +292,7 @@ def generate_key_points(lecture_id: int) -> List[str]:
 def generate_flashcards(lecture_id: int) -> List[Dict[str, Any]]:
     _ensure_ready_lecture(lecture_id)
     context, chunks = _prepare_context(lecture_id)
-    client = DeepSeekClient()
+    client = OpenAIClient()
     messages = [
         {
             "role": "system",
@@ -358,4 +358,3 @@ def generate_flashcards(lecture_id: int) -> List[Dict[str, Any]]:
         for row in list_flashcards(lecture_id)
     ]
     return stored
-

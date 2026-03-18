@@ -2,11 +2,11 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 
-from .audio_utils import chunk_transcript_segments, transcribe_audio
-from .pdf_utils import extract_text_with_pages, chunk_text_with_pages
-from .slide_utils import extract_text_with_slides, chunk_text_with_slides
-from .embedding_model import embed_texts
-from .db import (
+from .audio import chunk_transcript_segments, transcribe_audio
+from .pdf import extract_text_with_pages, chunk_text_with_pages
+from .slides import extract_text_with_slides, chunk_text_with_slides
+from ..services.embeddings import embed_texts
+from ..db.postgres import (
     insert_lecture,
     insert_chunks,
     save_lecture_transcript,
@@ -15,7 +15,7 @@ from .db import (
     update_lecture_file,
     reset_lecture_materials,
 )
-from .file_utils import save_uploaded_file
+from .files import save_uploaded_file
 
 MAX_CHUNKS_FOR_V0 = 200  # allow more coverage for longer PDFs
 
@@ -239,7 +239,6 @@ def ingest_slides(path: str, original_name: str | None = None, course_id: int | 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python -m src.rag_index path/to/file.pdf")
+        print("Usage: python -m src.ingestion.indexer path/to/file.pdf")
         sys.exit(1)
     ingest_pdf(sys.argv[1])
-

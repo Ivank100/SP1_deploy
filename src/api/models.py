@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 # Import range from config (single source of truth)
-from ..config import FLASHCARD_COUNT_MIN, FLASHCARD_COUNT_MAX
+from ..core.config import FLASHCARD_COUNT_MIN, FLASHCARD_COUNT_MAX
 
 class LectureResponse(BaseModel):
     """Response model for lecture data."""

@@ -3,9 +3,12 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from typing import List, Optional
 
-from ...db import (
+from ...db.postgres import (
+    assign_instructor_to_course,
     get_course,
+    get_course_instructors,
     list_courses,
+    remove_instructor_assignment,
     get_user_by_id,
     get_user_by_email,
     list_lectures,
@@ -33,60 +36,6 @@ class CourseInstructorsResponse(BaseModel):
     course_id: int
     course_name: str
     instructors: List[dict]
-
-
-def assign_instructor_to_course(course_id: int, instructor_id: int, assigned_by: int):
-    """Assign an instructor to a course."""
-    from ...db import get_conn, init_schema
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        try:
-            cur.execute(
-                """
-                INSERT INTO course_instructors (course_id, instructor_id, assigned_by)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (course_id, instructor_id) DO NOTHING
-                RETURNING assigned_at
-                """,
-                (course_id, instructor_id, assigned_by),
-            )
-            result = cur.fetchone()
-            conn.commit()
-            return result[0] if result else None
-        except Exception as e:
-            conn.rollback()
-            raise ValueError(f"Failed to assign instructor: {str(e)}")
-
-
-def get_course_instructors(course_id: int) -> List[dict]:
-    """Get all instructors assigned to a course."""
-    from ...db import get_conn, init_schema
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT 
-                ci.instructor_id,
-                u.email,
-                ci.assigned_at,
-                ci.assigned_by
-            FROM course_instructors ci
-            JOIN users u ON ci.instructor_id = u.id
-            WHERE ci.course_id = %s
-            ORDER BY ci.assigned_at DESC
-            """,
-            (course_id,),
-        )
-        return [
-            {
-                "instructor_id": row[0],
-                "instructor_email": row[1],
-                "assigned_at": row[2].isoformat() if row[2] else None,
-                "assigned_by": row[2],
-            }
-            for row in cur.fetchall()
-        ]
-
 
 @router.post("/courses/{course_id}/instructors", response_model=CourseInstructorResponse)
 async def assign_instructor(
@@ -165,28 +114,15 @@ async def remove_instructor(
     current_user: dict = Depends(get_current_admin),
 ):
     """Remove an instructor from a course."""
-    from ...db import get_conn, init_schema
-    init_schema()
-    
     course = get_course(course_id)
     if not course:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Course with id {course_id} not found",
         )
-    
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            DELETE FROM course_instructors
-            WHERE course_id = %s AND instructor_id = %s
-            """,
-            (course_id, instructor_id),
-        )
-        if cur.rowcount == 0:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Instructor assignment not found",
-            )
-        conn.commit()
 
+    if not remove_instructor_assignment(course_id, instructor_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Instructor assignment not found",
+        )

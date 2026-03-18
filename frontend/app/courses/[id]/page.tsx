@@ -721,7 +721,7 @@ export default function CourseDetailPage() {
   }, [user?.role, courseId]);
 
   useEffect(() => {
-    if (user?.role === 'student' && courseId) {
+    if ((user?.role === 'instructor' || user?.role === 'ta') && courseId) {
       loadUploadRequests(courseId);
     }
   }, [user?.role, courseId]);
@@ -739,12 +739,6 @@ export default function CourseDetailPage() {
       loadCourseStudents(courseId);
     }
   }, [user?.role, courseId]);
-
-  useEffect(() => {
-    if (user?.role === 'instructor' && course?.id) {
-      loadCourseStudents(course.id);
-    }
-  }, [user?.role, course?.id]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -874,6 +868,17 @@ export default function CourseDetailPage() {
     }
   };
 
+  const refreshUploadRequestState = async (courseId: number, options?: { reloadCourse?: boolean }) => {
+    const tasks: Promise<unknown>[] = [loadMyUploadRequests(courseId)];
+    if (user?.role === 'instructor' || user?.role === 'ta') {
+      tasks.push(loadUploadRequests(courseId));
+    }
+    if (options?.reloadCourse) {
+      tasks.push(loadCourse());
+    }
+    await Promise.all(tasks);
+  };
+
   const handleAddStudent = async (courseId: number) => {
     const email = newStudentEmail[courseId]?.trim();
     if (!email) {
@@ -940,9 +945,7 @@ export default function CourseDetailPage() {
   const handleApproveUpload = async (courseId: number, requestId: number) => {
     try {
       await apiClient.approveUploadRequest(courseId, requestId);
-      await loadCourse();
-      await loadUploadRequests(courseId);
-      await loadMyUploadRequests(courseId);
+      await refreshUploadRequestState(courseId, { reloadCourse: true });
     } catch (error: any) {
       alert(error.response?.data?.detail || 'Failed to approve upload');
     }
@@ -951,10 +954,23 @@ export default function CourseDetailPage() {
   const handleRejectUpload = async (courseId: number, requestId: number) => {
     try {
       await apiClient.rejectUploadRequest(courseId, requestId);
-      await loadUploadRequests(courseId);
-      await loadMyUploadRequests(courseId);
+      await refreshUploadRequestState(courseId);
     } catch (error: any) {
       alert(error.response?.data?.detail || 'Failed to reject upload');
+    }
+  };
+
+  const handleDeleteUploadRequest = async (courseId: number, requestId: number, status: string) => {
+    const actionLabel = status === 'pending' ? 'cancel this upload request' : 'remove this upload request';
+    if (!confirm(`Are you sure you want to ${actionLabel}?`)) {
+      return;
+    }
+
+    try {
+      await apiClient.deleteUploadRequest(courseId, requestId);
+      await refreshUploadRequestState(courseId);
+    } catch (error: any) {
+      alert(error.response?.data?.detail || 'Failed to remove upload request');
     }
   };
 
@@ -1550,17 +1566,29 @@ export default function CourseDetailPage() {
                                   </p>
                                   <p className="text-base text-gray-500 truncate">{request.file_type}</p>
                                 </div>
-                                <span
-                                  className={`text-base px-2 py-0.5 rounded-full ${
-                                    request.status === 'pending'
-                                      ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
-                                      : request.status === 'approved'
-                                      ? 'bg-green-50 text-green-700 border border-green-200'
-                                      : 'bg-red-50 text-red-700 border border-red-200'
-                                  }`}
-                                >
-                                  {request.status}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`text-base px-2 py-0.5 rounded-full ${
+                                      request.status === 'pending'
+                                        ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+                                        : request.status === 'approved'
+                                        ? 'bg-green-50 text-green-700 border border-green-200'
+                                        : 'bg-red-50 text-red-700 border border-red-200'
+                                    }`}
+                                  >
+                                    {request.status}
+                                  </span>
+                                  <button
+                                    onClick={() => handleDeleteUploadRequest(course.id, request.id, request.status)}
+                                    className={`px-3 py-1.5 text-sm rounded border ${
+                                      request.status === 'pending'
+                                        ? 'border-red-200 text-red-700 hover:bg-red-50'
+                                        : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    {request.status === 'pending' ? 'Cancel' : 'Remove'}
+                                  </button>
+                                </div>
                               </div>
                               {request.created_at && (
                                 <p className="text-base text-gray-400 mt-2">
@@ -1774,4 +1802,3 @@ export default function CourseDetailPage() {
     </div>
   );
 }
-

@@ -316,7 +316,7 @@ export interface QueryListResponse {
 export interface User {
   id: number;
   email: string;
-  role: 'student' | 'instructor';
+  role: 'student' | 'instructor' | 'ta';
 }
 
 export interface RegisterRequest {
@@ -481,6 +481,10 @@ export const apiClient = {
       `/api/courses/${courseId}/upload-requests/${requestId}/reject`
     );
     return response.data;
+  },
+
+  async deleteUploadRequest(courseId: number, requestId: number): Promise<void> {
+    await api.delete(`/api/courses/${courseId}/upload-requests/${requestId}`);
   },
 
   // Legacy upload endpoint (defaults to general course)
@@ -713,4 +717,3 @@ export const apiClient = {
     return !!localStorage.getItem('auth_token');
   },
 };
-

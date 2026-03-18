@@ -4,7 +4,7 @@ import shutil
 import uuid
 from pathlib import Path
 from typing import Optional
-from .config import UPLOAD_DIR
+from ..core.config import UPLOAD_DIR
 
 def ensure_upload_dir(subdir: Optional[str] = None) -> Path:
     """Ensure uploads directory (and optional subdir) exists, return Path object."""
@@ -42,3 +42,32 @@ def get_file_path(stored_path: str) -> Path:
     """Get full Path object for a stored file path."""
     return Path(stored_path)
 
+
+def delete_stored_file(stored_path: Optional[str]) -> bool:
+    """
+    Delete a stored upload file only if it lives under the configured uploads directory.
+
+    Returns True when a file was removed, False otherwise.
+    """
+    if not stored_path:
+        return False
+
+    try:
+        candidate = Path(stored_path).expanduser().resolve()
+        uploads_root = Path(UPLOAD_DIR).expanduser().resolve()
+    except OSError:
+        return False
+
+    try:
+        candidate.relative_to(uploads_root)
+    except ValueError:
+        return False
+
+    if not candidate.exists() or not candidate.is_file():
+        return False
+
+    try:
+        candidate.unlink()
+        return True
+    except OSError:
+        return False

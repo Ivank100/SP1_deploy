@@ -2,7 +2,7 @@
 from collections import defaultdict
 from typing import List, Tuple
 
-from .pdf_utils import _get_converter, chunk_text_with_pages
+from .pdf import _get_converter, chunk_text_with_pages
 
 
 def extract_text_with_slides(path: str) -> List[Tuple[str, int]]:

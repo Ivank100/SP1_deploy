@@ -1,8 +1,10 @@
 # src/pdf_utils.py
 from collections import defaultdict
+import inspect
 from typing import List, Tuple
 
-from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 
 _converter_no_ocr: DocumentConverter | None = None
@@ -13,14 +15,26 @@ def _get_converter(ocr: bool = False) -> DocumentConverter:
     global _converter_no_ocr, _converter_ocr
     if not ocr:
         if _converter_no_ocr is None:
-            _converter_no_ocr = DocumentConverter(
-                pipeline_options=PdfPipelineOptions(do_ocr=False)
-            )
+            _converter_no_ocr = _build_converter(do_ocr=False)
         return _converter_no_ocr
     else:
         if _converter_ocr is None:
-            _converter_ocr = DocumentConverter()
+            _converter_ocr = _build_converter(do_ocr=True)
         return _converter_ocr
+
+
+def _build_converter(do_ocr: bool) -> DocumentConverter:
+    pdf_options = PdfPipelineOptions(do_ocr=do_ocr)
+    init_params = inspect.signature(DocumentConverter.__init__).parameters
+
+    if "format_options" in init_params:
+        return DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options)
+            }
+        )
+
+    return DocumentConverter(pipeline_options=pdf_options)
 
 
 def extract_text_from_pdf(path: str) -> str:
@@ -94,8 +108,8 @@ def chunk_text(text: str, max_chars: int = 1500, overlap: int = 200) -> List[str
 
 
 def chunk_text_with_pages(text_pages: List[Tuple[str, int]],
-                          max_chars: int = 1500,
-                          overlap: int = 200) -> List[Tuple[str, int]]:
+                          max_chars: int = 900,
+                          overlap: int = 120) -> List[Tuple[str, int]]:
     """
     Chunk text from multiple pages, preserving page numbers.
 

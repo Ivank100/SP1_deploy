@@ -11,7 +11,7 @@ try:
 except ImportError:
     WHISPER_AVAILABLE = False
 
-from .config import OPENAI_API_KEY, OPENAI_BASE_URL, WHISPER_MODEL
+from ..core.config import OPENAI_API_KEY, OPENAI_BASE_URL, WHISPER_MODEL
 
 
 class TranscriptionError(RuntimeError):

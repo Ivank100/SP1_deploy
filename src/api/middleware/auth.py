@@ -6,8 +6,8 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 
-from ...auth_utils import decode_access_token
-from ...db import get_user_by_id
+from ...core.auth import decode_access_token
+from ...db.postgres import get_user_by_id
 
 security = HTTPBearer()
 

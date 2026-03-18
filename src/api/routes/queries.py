@@ -1,8 +1,9 @@
 # src/api/routes/queries.py
 from fastapi import APIRouter, HTTPException, status, Depends
 
-from ...db import get_lecture, get_conn, can_user_access_lecture
-from ...rag_query import answer_question
+from ...db.postgres import get_conn
+from ...services.rag import answer_question
+from ..common import ensure_lecture_access, query_history_item_from_row
 from ..middleware.auth import get_current_user
 from ..models import (
     QueryRequest,
@@ -26,19 +27,7 @@ async def query_lecture(
     Returns answer with citations.
     """
     # Verify lecture exists
-    lecture = get_lecture(lecture_id)
-    if not lecture:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Lecture with id {lecture_id} not found"
-        )
-    
-    # Check access
-    if not can_user_access_lecture(current_user["id"], lecture_id, current_user["role"]):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this lecture",
-        )
+    lecture = ensure_lecture_access(lecture_id, current_user)
     
     # Check if lecture is ready
     if lecture[4] != "completed":  # status
@@ -75,19 +64,7 @@ async def get_query_history_for_lecture(
     Get query history for a specific lecture.
     """
     # Verify lecture exists
-    lecture = get_lecture(lecture_id)
-    if not lecture:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Lecture with id {lecture_id} not found"
-        )
-    
-    # Check access
-    if not can_user_access_lecture(current_user["id"], lecture_id, current_user["role"]):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this lecture",
-        )
+    ensure_lecture_access(lecture_id, current_user)
     
     # Query directly from DB with lecture_id filter
     with get_conn() as conn, conn.cursor() as cur:
@@ -104,20 +81,9 @@ async def get_query_history_for_lecture(
         )
         history_items = cur.fetchall()
     
-    query_items = [
-        QueryHistoryItem(
-            id=item[0],
-            question=item[1],
-            answer=item[2],
-            created_at=item[3],
-            user_email=item[4],
-            page_number=item[5],
-        )
-        for item in history_items
-    ]
+    query_items = [query_history_item_from_row(item) for item in history_items]
     
     return QueryHistoryResponse(
         queries=query_items,
         total=len(query_items)
     )
-

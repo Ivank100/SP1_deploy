@@ -8,7 +8,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 import json
 
-from .db import get_conn, get_lecture, list_lectures, get_lecture_transcript
+from ..db.postgres import get_conn, get_lecture, list_lectures, get_lecture_transcript
 
 BIN_SIZE_MIN = 15
 
@@ -70,7 +70,7 @@ def _count_by_minute_bins(
             idx = bin_count - 1
         counts[idx] += 1
     return counts
-from .embedding_model import embed_texts
+from .embeddings import embed_texts
 
 
 def cluster_questions(

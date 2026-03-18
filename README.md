@@ -40,13 +40,13 @@ cp .env.example .env
 Edit `.env` and fill in your values:
 
 ```env
-# API Keys (Required)
-DEEPSEEK_API_KEY=your_deepseek_api_key_here
-DEEPSEEK_BASE_URL=https://openrouter.ai/api/v1
-
-# OpenAI API (Optional - only needed if using Whisper API instead of local)
+# OpenAI-compatible API (Required)
 OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_BASE_URL=https://api.openai.com/v1
+LLM_CHAT_MODEL=gpt-4o-mini
+EMBEDDING_MODEL=text-embedding-3-small
+
+# OpenAI Whisper API (Optional - only needed if using Whisper API instead of local)
 WHISPER_MODEL=whisper-1
 
 # Database Configuration (Required)
@@ -131,6 +131,12 @@ python run_api.py
 ```
 
 The API will be available at `http://localhost:8000`
+
+If you change embedding models after lectures have already been ingested, re-embed the stored chunks:
+
+```bash
+python reembed_chunks.py
+```
 
 ### Start the Frontend
 

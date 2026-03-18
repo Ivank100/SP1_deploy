@@ -1,9 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from typing import Optional
 
-from ...db import (
-    get_lecture,
-    can_user_access_lecture,
+from ...db.postgres import (
     create_flashcard_set,
     insert_flashcards,
     get_latest_flashcard_set,
@@ -12,7 +10,7 @@ from ...db import (
     list_flashcards,
 )
 from ..middleware.auth import get_current_user
-from ...study_materials import (
+from ...services.study_materials import (
     get_materials,
     generate_summary,
     generate_key_points,
@@ -20,7 +18,8 @@ from ...study_materials import (
     LectureNotFoundError,
     LectureNotReadyError,
 )
-from ...flashcard_generator import generate_flashcards_v2
+from ...services.flashcards import generate_flashcards_v2
+from ..common import ensure_lecture_access, get_lecture_or_404
 from ..models import (
     StudyMaterialsResponse,
     SummaryResponse,
@@ -33,27 +32,26 @@ from ..models import (
 router = APIRouter(prefix="/api/lectures", tags=["study-materials"])
 
 
-def _ensure_lecture_exists(lecture_id: int):
-    lecture = get_lecture(lecture_id)
-    if not lecture:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Lecture with id {lecture_id} not found",
+def _flashcard_models_from_rows(rows) -> list[FlashcardModel]:
+    return [
+        FlashcardModel(
+            id=row[0],
+            question=row[1],
+            answer=row[2],
+            front=row[1],
+            back=row[2],
+            source_keypoint_id=row[3],
+            quality_score=row[4],
         )
-    return lecture
-
+        for row in rows
+    ]
 
 @router.get("/{lecture_id}/study-materials", response_model=StudyMaterialsResponse)
 async def get_study_materials(
     lecture_id: int,
     current_user: dict = Depends(get_current_user),
 ):
-    lecture = _ensure_lecture_exists(lecture_id)
-    if not can_user_access_lecture(current_user["id"], lecture_id, current_user["role"]):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this lecture",
-        )
+    ensure_lecture_access(lecture_id, current_user)
     materials = get_materials(lecture_id)
     return StudyMaterialsResponse(
         lecture_id=lecture_id,
@@ -68,12 +66,7 @@ async def summarize_lecture(
     lecture_id: int,
     current_user: dict = Depends(get_current_user),
 ):
-    lecture = _ensure_lecture_exists(lecture_id)
-    if not can_user_access_lecture(current_user["id"], lecture_id, current_user["role"]):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this lecture",
-        )
+    ensure_lecture_access(lecture_id, current_user)
     try:
         summary = generate_summary(lecture_id)
     except LectureNotReadyError as exc:
@@ -88,12 +81,7 @@ async def key_points(
     lecture_id: int,
     current_user: dict = Depends(get_current_user),
 ):
-    lecture = _ensure_lecture_exists(lecture_id)
-    if not can_user_access_lecture(current_user["id"], lecture_id, current_user["role"]):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this lecture",
-        )
+    ensure_lecture_access(lecture_id, current_user)
     try:
         points = generate_key_points(lecture_id)
     except LectureNotReadyError as exc:
@@ -119,12 +107,8 @@ async def generate_flashcards_endpoint(
     request: FlashcardGenerateRequest = FlashcardGenerateRequest(),
 ):
     """Generate new flashcards for a lecture."""
-    lecture = _ensure_lecture_exists(lecture_id)
-    if not can_user_access_lecture(current_user["id"], lecture_id, current_user["role"]):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this lecture",
-        )
+    get_lecture_or_404(lecture_id)
+    ensure_lecture_access(lecture_id, current_user)
     
     try:
         # Infer regenerate if lecture already has flashcard sets (defense in depth)
@@ -153,18 +137,7 @@ async def generate_flashcards_endpoint(
         
         # Fetch and return
         stored_rows = list_flashcards_by_set(set_id)
-        cards = [
-            FlashcardModel(
-                id=row[0],
-                question=row[1],
-                answer=row[2],
-                front=row[1],  # For backward compatibility
-                back=row[2],   # For backward compatibility
-                source_keypoint_id=row[3],
-                quality_score=row[4],
-            )
-            for row in stored_rows
-        ]
+        cards = _flashcard_models_from_rows(stored_rows)
         
         return FlashcardListResponse(
             lecture_id=lecture_id,
@@ -200,12 +173,7 @@ async def get_latest_flashcards(
     current_user: dict = Depends(get_current_user),
 ):
     """Get the latest flashcard set for a lecture."""
-    lecture = _ensure_lecture_exists(lecture_id)
-    if not can_user_access_lecture(current_user["id"], lecture_id, current_user["role"]):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this lecture",
-        )
+    ensure_lecture_access(lecture_id, current_user)
     
     set_info = get_latest_flashcard_set(lecture_id)
     if not set_info:
@@ -217,18 +185,7 @@ async def get_latest_flashcards(
     
     set_id, strategy, _ = set_info
     stored_rows = list_flashcards_by_set(set_id)
-    cards = [
-        FlashcardModel(
-            id=row[0],
-            question=row[1],
-            answer=row[2],
-            front=row[1],  # For backward compatibility
-            back=row[2],   # For backward compatibility
-            source_keypoint_id=row[3],
-            quality_score=row[4],
-        )
-        for row in stored_rows
-    ]
+    cards = _flashcard_models_from_rows(stored_rows)
     
     return FlashcardListResponse(
         lecture_id=lecture_id,
@@ -245,12 +202,7 @@ async def get_flashcard_set(
     current_user: dict = Depends(get_current_user),
 ):
     """Get a specific flashcard set by ID."""
-    lecture = _ensure_lecture_exists(lecture_id)
-    if not can_user_access_lecture(current_user["id"], lecture_id, current_user["role"]):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this lecture",
-        )
+    ensure_lecture_access(lecture_id, current_user)
     
     set_info = get_flashcard_set_by_id(set_id)
     if not set_info:
@@ -267,18 +219,7 @@ async def get_flashcard_set(
         )
     
     stored_rows = list_flashcards_by_set(set_id)
-    cards = [
-        FlashcardModel(
-            id=row[0],
-            question=row[1],
-            answer=row[2],
-            front=row[1],  # For backward compatibility
-            back=row[2],   # For backward compatibility
-            source_keypoint_id=row[3],
-            quality_score=row[4],
-        )
-        for row in stored_rows
-    ]
+    cards = _flashcard_models_from_rows(stored_rows)
     
     return FlashcardListResponse(
         lecture_id=lecture_id,
@@ -286,4 +227,3 @@ async def get_flashcard_set(
         set_id=set_id,
         strategy=strategy,
     )
-

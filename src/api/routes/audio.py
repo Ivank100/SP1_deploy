@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 
-from ...audio_utils import chunk_transcript_segments, transcribe_audio
-from ...db import (
+from ...ingestion.audio import chunk_transcript_segments, transcribe_audio
+from ...db.postgres import (
     clear_chunks_for_lecture,
     get_lecture,
     get_lecture_transcript,
@@ -9,8 +9,8 @@ from ...db import (
     save_lecture_transcript,
     update_lecture_status,
 )
-from ...embedding_model import embed_texts
-from ...rag_index import MAX_CHUNKS_FOR_V0
+from ...services.embeddings import embed_texts
+from ...ingestion.indexer import MAX_CHUNKS_FOR_V0
 from ..models import TranscriptResponse, TranscriptSegment, TranscriptionResponse
 
 router = APIRouter(prefix="/api/lectures", tags=["audio"])
