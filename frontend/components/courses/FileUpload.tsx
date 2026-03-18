@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This component renders course-related UI for file upload.
+ * It keeps course screens modular by isolating one focused piece of the interface.
+ */
 import { useState, useRef } from 'react';
 import { apiClient } from '@/lib/api';
 

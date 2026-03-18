@@ -1,4 +1,6 @@
-"""LLM-backed flashcard generation helpers."""
+"""This file generates flashcard candidates with the language model.
+It focuses on turning lecture content into draft question-answer pairs."""
+
 
 import json
 import re

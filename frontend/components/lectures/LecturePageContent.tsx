@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This component renders lecture-related UI for lecture page content.
+ * It packages one part of the lecture experience into a reusable frontend unit.
+ */
 import { useMemo, useRef } from 'react';
 import type { MutableRefObject, ReactNode } from 'react';
 import Link from 'next/link';

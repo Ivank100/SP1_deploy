@@ -1,3 +1,7 @@
+"""This file stores helper logic shared by the study-material generators.
+It keeps repeated prompt, formatting, and citation behavior in one place."""
+
+
 import json
 import re
 from typing import Any, Dict, List, Optional, Tuple

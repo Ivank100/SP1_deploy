@@ -1,3 +1,8 @@
+<!--
+This file is the main project guide for LectureSense.
+It explains the product, stack, setup steps, and available features.
+-->
+
 # LectureSense
 
 LectureSense is a full-stack lecture workspace for students and instructors. It supports course-based lecture uploads, AI question answering over lecture content, instructor analytics, study materials, and audio/slides workflows.

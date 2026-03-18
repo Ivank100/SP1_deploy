@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This file contains frontend helpers for lecture analytics and question history.
+ * It formats analytics data and provides small utilities used by lecture-facing views.
+ */
 import { API_BASE_URL, Lecture, QueryHistoryItem } from '@/lib/api';
 
 export type LectureQuestionFilter = 'all' | 'answered' | 'unanswered' | 'flagged' | 'hidden';

@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This component renders the register page page UI.
+ * It takes prepared page state and turns it into the visible screen layout.
+ */
 import Link from 'next/link';
 import { useRegisterPage } from '@/hooks/useRegisterPage';
 

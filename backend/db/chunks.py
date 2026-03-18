@@ -1,3 +1,7 @@
+"""This file contains database helpers for chunks records.
+It wraps SQL reads and writes used by the API and service layers."""
+
+
 from typing import Any, List, Optional, Tuple
 
 from .connection import get_conn

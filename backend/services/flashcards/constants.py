@@ -1,4 +1,6 @@
-"""Constants for flashcard generation."""
+"""This file stores constants used by the flashcard generation pipeline.
+It keeps shared limits, prompts, and tuning values in one place."""
+
 
 from ...core.config import FLASHCARD_COUNT_MAX
 

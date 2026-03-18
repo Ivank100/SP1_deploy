@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This hook manages state and actions for the course detail page workflow.
+ * It loads data, tracks UI state, and returns handlers used by page components.
+ */
 import { useEffect, useRef, useState } from 'react';
 import {
   apiClient,

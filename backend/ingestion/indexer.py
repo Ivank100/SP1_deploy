@@ -1,3 +1,7 @@
+"""This file coordinates the ingestion pipeline after a lecture file is uploaded.
+It decides how files are parsed, chunked, embedded, and saved to the database."""
+
+
 import sys
 from pathlib import Path
 from typing import Any, Iterable

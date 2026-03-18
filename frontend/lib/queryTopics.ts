@@ -1,3 +1,7 @@
+/**
+ * This file extracts and groups query topics for analytics displays.
+ * It helps turn raw question history into cleaner topic summaries for the UI.
+ */
 const BLACKLIST_PATTERNS = [
   /teacher'?s name/i,
   /who is the teacher/i,

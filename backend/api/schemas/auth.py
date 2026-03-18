@@ -1,3 +1,7 @@
+"""This file defines Pydantic schemas for auth API payloads.
+These models validate request bodies and keep response shapes consistent."""
+
+
 from pydantic import BaseModel, EmailStr
 
 

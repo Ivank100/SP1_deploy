@@ -1,3 +1,7 @@
+"""This file implements analytics logic for clustering insights.
+It turns raw lecture or question data into summaries the API can return."""
+
+
 from collections import defaultdict
 from typing import Any, Dict, List
 

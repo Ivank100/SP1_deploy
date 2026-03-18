@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
-"""
-Run the LectureSense API server.
+"""This file is a small local entrypoint for starting the backend API.
+It runs Uvicorn with reload enabled so development changes are picked up automatically."""
 
-Usage:
-    python run_api.py
-
-Or with uvicorn directly:
-    uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
-"""
 import uvicorn
 
 if __name__ == "__main__":

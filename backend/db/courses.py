@@ -1,3 +1,7 @@
+"""This file contains database helpers for courses records.
+It wraps SQL reads and writes used by the API and service layers."""
+
+
 from datetime import datetime
 from typing import List, Optional
 

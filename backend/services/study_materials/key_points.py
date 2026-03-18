@@ -1,3 +1,7 @@
+"""This file generates key-point study materials from lecture content.
+It turns lecture text into concise takeaways students can review quickly."""
+
+
 import json
 import re
 from typing import List

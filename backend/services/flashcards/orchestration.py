@@ -1,4 +1,6 @@
-"""End-to-end flashcard generation orchestration."""
+"""This file coordinates the end-to-end flashcard workflow.
+It ties together selection, generation, parsing, validation, and final output."""
+
 
 import json
 from typing import Any, Dict, List, Optional

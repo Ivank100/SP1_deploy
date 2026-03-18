@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This file is the Next.js route entry for the courses/[id] page.
+ * It connects route parameters and page-level wiring to the matching view logic.
+ */
 import { useParams, useRouter } from 'next/navigation';
 import CourseDetailPageView from '@/components/pages/courses/CourseDetailPageView';
 import { useCourseDetailPage } from '@/hooks/useCourseDetailPage';

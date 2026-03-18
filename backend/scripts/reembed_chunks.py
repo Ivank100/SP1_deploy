@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Re-embed existing chunk rows using the configured OpenAI-compatible embedding model."""
+"""This script rebuilds embeddings for chunks that are already stored in the database.
+It is useful when the embedding model or vector settings change."""
+
 
 from __future__ import annotations
 

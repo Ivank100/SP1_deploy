@@ -1,3 +1,7 @@
+"""This file contains database helpers for users records.
+It wraps SQL reads and writes used by the API and service layers."""
+
+
 from typing import Any, Dict, List
 
 import psycopg.errors

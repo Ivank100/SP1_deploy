@@ -1,3 +1,7 @@
+"""This file loads configuration values from environment variables.
+It centralizes settings like database, model, auth, and file storage options."""
+
+
 import os
 from dotenv import load_dotenv
 

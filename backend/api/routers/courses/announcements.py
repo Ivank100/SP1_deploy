@@ -1,3 +1,7 @@
+"""This file defines course announcement endpoints.
+It handles creating, listing, and managing announcement records tied to a course."""
+
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ....db.postgres import get_conn

@@ -1,3 +1,7 @@
+"""This file normalizes citation data returned with answers and study materials.
+It keeps source references consistent across PDFs, slides, and audio timestamps."""
+
+
 # src/citation_utils.py
 from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple

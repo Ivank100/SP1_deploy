@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This component provides a reusable audio player UI block.
+ * It wraps display behavior that can be dropped into multiple pages or features.
+ */
 import { useRef, useState, useEffect } from 'react';
 import { TranscriptSegment } from '@/lib/api';
 import { formatTimestamp } from '@/lib/formatters';

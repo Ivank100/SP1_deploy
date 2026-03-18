@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This component renders course-related UI for course card.
+ * It keeps course screens modular by isolating one focused piece of the interface.
+ */
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { apiClient, Course, User } from '@/lib/api';

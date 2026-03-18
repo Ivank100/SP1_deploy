@@ -1,3 +1,7 @@
+"""This file defines reusable FastAPI dependencies for auth.
+Route modules import these helpers to share auth and request context behavior."""
+
+
 from typing import Optional
 
 from fastapi import Depends, HTTPException, status

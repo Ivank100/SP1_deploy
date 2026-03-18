@@ -1,3 +1,7 @@
+"""This file contains database helpers for connection records.
+It wraps SQL reads and writes used by the API and service layers."""
+
+
 import random
 import string
 

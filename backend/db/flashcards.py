@@ -1,3 +1,7 @@
+"""This file contains database helpers for flashcards records.
+It wraps SQL reads and writes used by the API and service layers."""
+
+
 import json
 from typing import Any, Dict, List, Optional, Tuple
 

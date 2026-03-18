@@ -1,3 +1,7 @@
+"""This file defines write endpoints for course management.
+It covers creating courses and updating or deleting course-owned data."""
+
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ....db.postgres import assign_instructor_to_course, create_course, get_course

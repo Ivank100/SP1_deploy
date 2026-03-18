@@ -1,3 +1,7 @@
+"""This file marks the schemas folder as a Python package.
+It also exposes shared imports when this package is loaded elsewhere."""
+
+
 from .analytics import (
     CourseAnalyticsResponse,
     LectureAnalyticsBin,

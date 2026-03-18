@@ -1,4 +1,6 @@
-"""Deduplication and selection helpers for flashcards."""
+"""This file selects the source material used for flashcard creation.
+It reduces duplication and chooses the best content slices to turn into cards."""
+
 
 from typing import Any, Callable, Dict, List
 

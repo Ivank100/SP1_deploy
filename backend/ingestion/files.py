@@ -1,3 +1,7 @@
+"""This file contains shared file-system helpers for lecture ingestion.
+It covers storing, deleting, and organizing uploaded source files on disk."""
+
+
 # src/file_utils.py
 import os
 import shutil

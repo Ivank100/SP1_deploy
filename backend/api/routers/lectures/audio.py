@@ -1,3 +1,7 @@
+"""This file defines lecture audio endpoints.
+It serves audio-related actions like transcript access and audio file handling."""
+
+
 from fastapi import APIRouter, HTTPException, status
 
 from ....ingestion.audio import chunk_transcript_segments, transcribe_audio

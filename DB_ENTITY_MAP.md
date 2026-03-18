@@ -1,3 +1,8 @@
+<!--
+This file maps database entities to the parts of the app that use them.
+It helps you trace features back to the tables and records they depend on.
+-->
+
 # DB Entity Map
 
 Small helper for tracing each main data entity through the app.

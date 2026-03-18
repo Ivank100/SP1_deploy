@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This hook manages state and actions for the register page workflow.
+ * It loads data, tracks UI state, and returns handlers used by page components.
+ */
 import { useState } from 'react';
 import { apiClient } from '@/lib/api';
 

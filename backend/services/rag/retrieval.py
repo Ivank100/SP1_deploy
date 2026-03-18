@@ -1,3 +1,7 @@
+"""This file handles retrieving relevant lecture chunks for a question.
+It is the search step that finds the best source material before answer generation."""
+
+
 from collections import defaultdict
 import re
 from typing import Any, Dict, List, Optional, Tuple

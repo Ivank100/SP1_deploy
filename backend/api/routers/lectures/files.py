@@ -1,3 +1,7 @@
+"""This file defines lecture file endpoints.
+It handles file download or replacement flows tied to stored lecture assets."""
+
+
 import os
 from pathlib import Path
 

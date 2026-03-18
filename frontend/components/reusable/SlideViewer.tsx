@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This component provides a reusable slide viewer UI block.
+ * It wraps display behavior that can be dropped into multiple pages or features.
+ */
 import { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 
 interface Slide {

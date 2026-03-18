@@ -1,3 +1,7 @@
+"""This file implements analytics logic for lecture insights.
+It turns raw lecture or question data into summaries the API can return."""
+
+
 import math
 from collections import defaultdict
 from datetime import datetime

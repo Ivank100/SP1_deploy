@@ -1,4 +1,6 @@
-"""Authentication utilities for plain visible access tokens."""
+"""This file contains authentication helpers used across the backend.
+It handles password hashing, token creation, and token validation utilities."""
+
 
 from __future__ import annotations
 

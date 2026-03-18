@@ -1,3 +1,7 @@
+"""This file defines endpoints for course students and roster-related actions.
+It handles membership lookups and role-aware course participant management."""
+
+
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status

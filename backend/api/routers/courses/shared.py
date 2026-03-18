@@ -1,3 +1,7 @@
+"""This file stores helper logic shared by the course route modules.
+It keeps repeated access checks, upload rules, and response mapping in one place."""
+
+
 from collections import defaultdict
 import os
 from pathlib import Path

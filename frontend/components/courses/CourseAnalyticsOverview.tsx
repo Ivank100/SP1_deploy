@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This component renders course-related UI for course analytics overview.
+ * It keeps course screens modular by isolating one focused piece of the interface.
+ */
 import { useEffect, useState } from 'react';
 import {
   apiClient,

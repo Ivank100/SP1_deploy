@@ -1,4 +1,8 @@
 /** @type {import('tailwindcss').Config} */
+/**
+ * This file configures Tailwind for the frontend app.
+ * It defines which files are scanned and where shared design tokens can be customized.
+ */
 module.exports = {
   content: [
     './pages/**/*.{js,ts,jsx,tsx,mdx}',

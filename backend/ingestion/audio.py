@@ -1,4 +1,6 @@
-"""Utility helpers for audio ingestion and transcription."""
+"""This file handles audio-specific ingestion work for lectures.
+It covers transcription and turning spoken content into searchable text chunks."""
+
 from __future__ import annotations
 
 import mimetypes

@@ -1,3 +1,8 @@
+<!--
+This file documents the frontend app setup and local workflow.
+It is the quick reference for running or extending the Next.js client.
+-->
+
 # LectureSense Frontend
 
 Next.js frontend for LectureSense - AI-powered lecture Q&A system.

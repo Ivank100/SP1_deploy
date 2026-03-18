@@ -1,4 +1,7 @@
-// API client for FastAPI backend
+/**
+ * This file is the typed frontend API client for the FastAPI backend.
+ * It defines shared request helpers, auth handling, and the app-wide data types returned by the server.
+ */
 import axios from 'axios';
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';

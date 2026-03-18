@@ -1,4 +1,6 @@
-"""Validation and scoring helpers for flashcards."""
+"""This file checks flashcards before they are returned to the user.
+It filters weak cards and scores whether the generated output is usable."""
+
 
 import re
 from typing import List, Optional, Tuple

@@ -1,3 +1,8 @@
+# This file defines how to build the app into a Docker image.
+# It is used for containerized runs and deployment packaging.
+
+# This file builds the project into a container image.
+
 FROM python:3.12-slim
 
 WORKDIR /app

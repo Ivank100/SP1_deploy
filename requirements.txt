@@ -1,3 +1,8 @@
+# This file lists the Python dependencies for the backend service.
+# Install it to get the packages needed for the API and ingestion pipeline.
+
+# This file lists the Python packages the backend needs.
+
 python-dotenv
 psycopg[binary]
 docling

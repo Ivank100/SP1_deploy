@@ -1,3 +1,7 @@
+"""This file defines endpoints for generated study materials.
+It returns summaries, key points, and flashcards built from lecture content."""
+
+
 from fastapi import APIRouter, HTTPException, status, Depends
 from typing import Optional
 

@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This hook manages state and actions for the lecture questions workflow.
+ * It loads data, tracks UI state, and returns handlers used by page components.
+ */
 import { Dispatch, FormEvent, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiClient, QueryHistoryItem, QueryResponse, User } from '@/lib/api';
 import {

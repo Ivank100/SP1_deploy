@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This component renders lecture-related UI for lecture list.
+ * It packages one part of the lecture experience into a reusable frontend unit.
+ */
 import { Lecture } from '@/lib/api';
 import Link from 'next/link';
 

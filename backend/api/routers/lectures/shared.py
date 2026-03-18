@@ -1,3 +1,7 @@
+"""This file stores helper logic shared by lecture route modules.
+It keeps repeated permission checks, mappings, and response helpers together."""
+
+
 import os
 from pathlib import Path
 import tempfile

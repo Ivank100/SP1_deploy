@@ -1,3 +1,7 @@
+"""This file contains API-facing service helpers for responses flows.
+It keeps route handlers smaller by moving shared non-router logic out of endpoint functions."""
+
+
 from ..schemas import LectureResponse, QueryHistoryItem, UploadRequestResponse
 
 

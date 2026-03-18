@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This component renders instructor-focused UI for recurring topics card.
+ * It displays analytics or workflow information used on instructor screens.
+ */
 import { summarizeQuestionTopics } from '@/lib/queryTopics';
 
 type RecurringTopicsCardProps = {

@@ -1,3 +1,7 @@
+"""This file defines lecture slide endpoints.
+It exposes slide content and slide-related actions used by the frontend viewer."""
+
+
 from collections import defaultdict
 
 from fastapi import APIRouter, HTTPException, status

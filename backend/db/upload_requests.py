@@ -1,3 +1,7 @@
+"""This file contains database helpers for upload requests records.
+It wraps SQL reads and writes used by the API and service layers."""
+
+
 from typing import List
 
 from .connection import get_conn

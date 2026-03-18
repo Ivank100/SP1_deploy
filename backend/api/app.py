@@ -1,3 +1,7 @@
+"""This file builds the main FastAPI application object.
+It wires middleware, routers, static uploads, and health endpoints into one app."""
+
+
 from pathlib import Path
 
 from fastapi import FastAPI

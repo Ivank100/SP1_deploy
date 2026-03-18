@@ -1,3 +1,7 @@
+"""This file defines read-only lecture endpoints.
+It returns lecture details, lists, and metadata needed by lecture pages."""
+
+
 from pathlib import Path
 from typing import Optional
 

@@ -1,3 +1,7 @@
+"""This file defines authentication endpoints for the API.
+It handles login, registration, and current-user flows used by the frontend."""
+
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ...core.auth import create_access_token

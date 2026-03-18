@@ -1,3 +1,7 @@
+/**
+ * This file holds small formatting helpers used across the frontend.
+ * It keeps repeated text, date, and display formatting logic out of UI components.
+ */
 import { CitationSource } from '@/lib/api';
 
 export const formatTimestamp = (seconds?: number | null) => {

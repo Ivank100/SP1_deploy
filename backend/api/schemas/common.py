@@ -1,3 +1,7 @@
+"""This file defines Pydantic schemas for common API payloads.
+These models validate request bodies and keep response shapes consistent."""
+
+
 from typing import Optional
 
 from pydantic import BaseModel

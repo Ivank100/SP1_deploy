@@ -1,3 +1,7 @@
+"""This file defines Pydantic schemas for lectures API payloads.
+These models validate request bodies and keep response shapes consistent."""
+
+
 from datetime import datetime
 from typing import List, Optional
 

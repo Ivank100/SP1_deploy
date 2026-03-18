@@ -1,4 +1,6 @@
-"""Parsing helpers for flashcard model output."""
+"""This file parses raw flashcard output from the model.
+It converts generated text into structured card objects the app can store or return."""
+
 
 import json
 import re

@@ -1,3 +1,7 @@
+"""This file defines course upload endpoints for lectures and upload requests.
+It validates files, saves pending uploads, and starts ingestion when uploads are allowed."""
+
+
 import os
 from pathlib import Path
 from uuid import uuid4

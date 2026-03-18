@@ -1,3 +1,7 @@
+"""This file defines instructor dashboard endpoints.
+It gathers instructor-facing data summaries that combine course and lecture analytics."""
+
+
 from fastapi import APIRouter, HTTPException, Query, status, Depends
 from typing import Optional, List
 

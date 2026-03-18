@@ -1,3 +1,8 @@
+<!--
+This file documents the backend service in more detail.
+It covers backend setup, architecture, and development workflow.
+-->
+
 Backend structure:
 
 - `api/`: FastAPI entrypoint, request models, middleware, and route handlers.

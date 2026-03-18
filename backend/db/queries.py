@@ -1,3 +1,7 @@
+"""This file contains database helpers for queries records.
+It wraps SQL reads and writes used by the API and service layers."""
+
+
 from typing import Optional
 
 from .connection import get_conn

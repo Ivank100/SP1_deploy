@@ -1,3 +1,7 @@
+"""This file extracts text and page structure from lecture PDFs.
+It prepares PDF content so later steps can chunk, embed, and cite it correctly."""
+
+
 # src/pdf_utils.py
 from collections import defaultdict
 import inspect

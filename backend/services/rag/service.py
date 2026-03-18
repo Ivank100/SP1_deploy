@@ -1,3 +1,7 @@
+"""This file runs the main lecture question-answering service.
+It combines retrieval, prompting, citations, and final answer assembly."""
+
+
 from typing import Optional
 
 from ...clients.openai import OpenAIClient

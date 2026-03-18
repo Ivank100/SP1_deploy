@@ -1,3 +1,7 @@
+"""This file contains API-facing service helpers for permissions flows.
+It keeps route handlers smaller by moving shared non-router logic out of endpoint functions."""
+
+
 from fastapi import HTTPException, status
 
 from ...db.postgres import can_user_access_lecture, get_lecture

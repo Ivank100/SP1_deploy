@@ -1,3 +1,7 @@
+"""This file defines endpoints for lecture resource attachments.
+It manages extra materials linked to a lecture beyond the primary source file."""
+
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ...dependencies.auth import get_current_user

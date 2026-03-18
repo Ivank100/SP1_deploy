@@ -1,3 +1,7 @@
+"""This file defines write endpoints for lecture management.
+It covers creating, updating, archiving, and other mutating lecture actions."""
+
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ...dependencies.auth import get_current_user

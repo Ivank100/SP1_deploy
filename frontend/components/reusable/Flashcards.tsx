@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This component provides a reusable flashcards UI block.
+ * It wraps display behavior that can be dropped into multiple pages or features.
+ */
 import { Flashcard } from '@/lib/api';
 import { useEffect, useMemo, useState } from 'react';
 

@@ -1,3 +1,7 @@
+"""This file wraps embedding generation for lecture search features.
+It turns text into vectors that the retrieval and indexing layers can reuse."""
+
+
 # src/embedding_model.py
 from typing import List
 

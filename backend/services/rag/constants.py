@@ -1,3 +1,7 @@
+"""This file stores constants for retrieval-augmented question answering.
+It keeps shared defaults and prompt-related values used by the RAG pipeline."""
+
+
 import re
 
 SYSTEM_PROMPT = """You are a helpful assistant for students studying lecture material.

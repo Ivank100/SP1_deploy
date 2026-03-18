@@ -1,3 +1,7 @@
+"""This file marks the courses folder as a Python package.
+It also exposes shared imports when this package is loaded elsewhere."""
+
+
 from fastapi import APIRouter
 
 from . import announcements, analytics, read, students, uploads, write

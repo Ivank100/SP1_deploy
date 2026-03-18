@@ -1,3 +1,7 @@
+/**
+ * This file groups and labels course data for frontend screens.
+ * It helps pages organize courses into sections that are easier to render in the UI.
+ */
 import { Course } from '@/lib/api';
 
 export const getTermKeyFromDate = (dateString: string) => {

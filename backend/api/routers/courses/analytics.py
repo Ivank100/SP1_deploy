@@ -1,3 +1,7 @@
+"""This file defines course analytics endpoints for instructors and staff.
+It returns summaries built from course-level question patterns and engagement data."""
+
+
 import csv
 from datetime import datetime, timedelta
 from io import StringIO

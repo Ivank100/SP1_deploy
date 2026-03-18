@@ -1,3 +1,7 @@
+"""This file generates lecture summaries.
+It condenses lecture content into a shorter study guide for students."""
+
+
 from ...clients.openai import OpenAIClient
 from ...db.postgres import save_lecture_summary
 from .shared import ensure_ready_lecture, prepare_context

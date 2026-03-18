@@ -1,3 +1,7 @@
+"""This file defines lecture question-answering endpoints.
+It receives questions, calls the retrieval pipeline, and returns answers with citations."""
+
+
 # src/api/routes/queries.py
 from fastapi import APIRouter, HTTPException, status, Depends
 

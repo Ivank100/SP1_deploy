@@ -1,4 +1,6 @@
-"""Utilities for parsing slide decks (PPT/PPTX) into text with slide numbers using Docling."""
+"""This file parses slide decks into slide-level text content.
+It extracts material from PPT and PPTX files so slides can be searched and cited."""
+
 from collections import defaultdict
 from typing import List, Tuple
 

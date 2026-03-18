@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This file is the Next.js route entry for the lectures/[id] page.
+ * It connects route parameters and page-level wiring to the matching view logic.
+ */
 import { useParams, useRouter } from 'next/navigation';
 import LecturePageContent from '@/components/lectures/LecturePageContent';
 import { apiClient } from '@/lib/api';

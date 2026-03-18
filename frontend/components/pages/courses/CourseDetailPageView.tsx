@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This component renders the course detail page page UI.
+ * It takes prepared page state and turns it into the visible screen layout.
+ */
 import FileUpload from '@/components/courses/FileUpload';
 import LectureList from '@/components/lectures/LectureList';
 import Link from 'next/link';

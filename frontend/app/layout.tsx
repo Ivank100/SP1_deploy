@@ -1,3 +1,7 @@
+/**
+ * This file defines the shared layout shell for the Next.js app.
+ * It wraps all pages with global structure and metadata.
+ */
 import './globals.css'
 import type { Metadata } from 'next'
 

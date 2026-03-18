@@ -1,3 +1,7 @@
+/**
+ * This file stores global CSS used across the frontend app.
+ * It defines shared page styles, base typography, and scrollbar styling.
+ */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

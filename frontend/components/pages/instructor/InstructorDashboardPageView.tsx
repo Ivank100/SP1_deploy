@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This component renders the instructor dashboard page page UI.
+ * It takes prepared page state and turns it into the visible screen layout.
+ */
 import Link from 'next/link';
 import RecurringTopicsCard from '@/components/instructor/RecurringTopicsCard';
 import { useInstructorDashboardPage } from '@/hooks/useInstructorDashboardPage';

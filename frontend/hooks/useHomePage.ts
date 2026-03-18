@@ -1,5 +1,9 @@
 'use client';
 
+/**
+ * This hook manages state and actions for the home page workflow.
+ * It loads data, tracks UI state, and returns handlers used by page components.
+ */
 import { useCallback, useEffect, useState } from 'react';
 import { apiClient, Course } from '@/lib/api';
 import { filterVisibleCourses, groupCoursesBySemester, sortSemesterKeys } from '@/lib/courseGrouping';

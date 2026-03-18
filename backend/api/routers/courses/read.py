@@ -1,3 +1,7 @@
+"""This file defines read-only course endpoints.
+It returns course lists, details, and membership-aware views for the frontend."""
+
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ....db.postgres import enroll_student_by_code

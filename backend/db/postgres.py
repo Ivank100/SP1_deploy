@@ -1,4 +1,6 @@
-"""Compatibility export layer for the Postgres DB modules."""
+"""This file is a compatibility layer for the database access modules.
+It re-exports shared DB helpers so older imports still work cleanly."""
+
 
 from .chunks import (
     clear_chunks_for_lecture,

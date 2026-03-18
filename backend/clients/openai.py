@@ -1,3 +1,7 @@
+"""This file creates the OpenAI-compatible client used by backend AI features.
+Services import it so chat, embeddings, and generation use one shared configuration."""
+
+
 # src/openai_client.py
 import requests
 from typing import List
