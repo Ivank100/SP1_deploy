@@ -1,9 +1,3 @@
-export type TopicSummary = {
-  topic: string;
-  count: number;
-  questions: string[];
-};
-
 const BLACKLIST_PATTERNS = [
   /teacher'?s name/i,
   /who is the teacher/i,
@@ -185,7 +179,6 @@ export const summarizeQuestionTopics = (questions: string[]) => {
       count: cluster.questions.length,
       questions: cluster.questions,
     }))
-    .filter((topic) => topic.count >= 1)
     .sort((a, b) => b.count - a.count);
 
   return {

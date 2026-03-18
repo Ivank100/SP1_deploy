@@ -16,8 +16,6 @@ api.interceptors.request.use((config) => {
     const token = localStorage.getItem('auth_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-    } else {
-      console.warn('No auth token found in localStorage');
     }
   }
   return config;
@@ -259,30 +257,6 @@ export interface CreateCoursePayload {
   description?: string;
   term_year?: number;
   term_number?: number;
-}
-
-export interface QueryCluster {
-  cluster_id: number;
-  count: number;
-  questions: string[];
-  representative_question: string;
-}
-
-export interface QueryClustersResponse {
-  clusters: QueryCluster[];
-  total_questions: number;
-}
-
-export interface TrendPoint {
-  period: string;
-  count: number;
-  questions: string[];
-}
-
-export interface TrendsResponse {
-  trends: TrendPoint[];
-  period: string;
-  days: number;
 }
 
 export interface LectureHealthMetric {
@@ -644,22 +618,6 @@ export const apiClient = {
   },
 
   // Instructor analytics
-  async getQueryClusters(nClusters: number = 5, lectureId?: number, courseId?: number): Promise<QueryClustersResponse> {
-    const params: any = { n_clusters: nClusters };
-    if (lectureId !== undefined && lectureId !== null) params.lecture_id = lectureId;
-    if (courseId !== undefined && courseId !== null) params.course_id = courseId;
-    const response = await api.get<QueryClustersResponse>('/api/instructor/analytics/query-clusters', { params });
-    return response.data;
-  },
-
-  async getTrends(days: number = 30, groupBy: 'day' | 'week' = 'day', courseId?: number, lectureId?: number): Promise<TrendsResponse> {
-    const params: any = { days, group_by: groupBy };
-    if (courseId !== undefined && courseId !== null) params.course_id = courseId;
-    if (lectureId !== undefined && lectureId !== null) params.lecture_id = lectureId;
-    const response = await api.get<TrendsResponse>('/api/instructor/analytics/trends', { params });
-    return response.data;
-  },
-
   async getLectureHealth(courseId?: number, lectureId?: number): Promise<LectureHealthResponse> {
     const params: any = {};
     if (courseId !== undefined && courseId !== null) params.course_id = courseId;
@@ -689,13 +647,8 @@ export const apiClient = {
   async login(email: string, password: string): Promise<TokenResponse> {
     const response = await api.post<TokenResponse>('/api/auth/login', { email, password });
     if (typeof window !== 'undefined') {
-      const token = response.data.access_token;
-      console.log('[DEBUG] Storing token:', token ? token.substring(0, 20) + '...' : 'null');
-      localStorage.setItem('auth_token', token);
+      localStorage.setItem('auth_token', response.data.access_token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
-      // Verify it was stored
-      const stored = localStorage.getItem('auth_token');
-      console.log('[DEBUG] Token stored:', stored ? stored.substring(0, 20) + '...' : 'null');
     }
     return response.data;
   },

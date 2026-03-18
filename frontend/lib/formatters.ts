@@ -1,7 +1,7 @@
 import { CitationSource } from '@/lib/api';
 
 export const formatTimestamp = (seconds?: number | null) => {
-  if (seconds == null) return null;
+  if (seconds == null) return '';
   const total = Math.max(Math.floor(seconds), 0);
   const mins = Math.floor(total / 60);
   const secs = total % 60;

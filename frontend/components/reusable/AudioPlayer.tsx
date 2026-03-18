@@ -2,25 +2,12 @@
 
 import { useRef, useState, useEffect } from 'react';
 import { TranscriptSegment } from '@/lib/api';
+import { formatTimestamp } from '@/lib/formatters';
 
 interface AudioPlayerProps {
   sourceUrl: string;
   segments: TranscriptSegment[];
 }
-
-const formatTimestamp = (seconds: number) => {
-  const total = Math.max(Math.floor(seconds), 0);
-  const mins = Math.floor(total / 60);
-  const secs = total % 60;
-  const hours = Math.floor(mins / 60);
-  const minutes = mins % 60;
-  if (hours > 0) {
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs
-      .toString()
-      .padStart(2, '0')}`;
-  }
-  return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-};
 
 export default function AudioPlayer({ sourceUrl, segments }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -78,4 +65,3 @@ export default function AudioPlayer({ sourceUrl, segments }: AudioPlayerProps) {
     </div>
   );
 }
-

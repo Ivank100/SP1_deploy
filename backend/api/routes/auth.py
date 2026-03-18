@@ -1,10 +1,9 @@
 # src/api/routes/auth.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
-from typing import Optional
 
-from ...db.postgres import create_user, get_user_by_email, add_user_to_course
-from ...core.auth import verify_password, get_password_hash, create_access_token
+from ...db.postgres import create_user, get_user_by_email
+from ...core.auth import create_access_token
 from ..middleware.auth import get_current_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -54,9 +53,8 @@ async def register(request: RegisterRequest):
         )
     
     # Create user
-    password_hash = get_password_hash(request.password)
     try:
-        user_id = create_user(request.email, password_hash, request.role)
+        user_id = create_user(request.email, request.password, request.role)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -90,7 +88,7 @@ async def login(request: LoginRequest):
     
     user_id, email, password_hash, role, _ = user
     
-    if not verify_password(request.password, password_hash):
+    if request.password != password_hash:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -119,4 +117,3 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
         email=current_user["email"],
         role=current_user["role"],
     )
-
