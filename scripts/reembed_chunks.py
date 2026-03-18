@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import argparse
 
-from src.db.postgres import list_chunk_records, update_chunk_embeddings
-from src.services.embeddings import embed_texts
+from backend.db.postgres import list_chunk_records, update_chunk_embeddings
+from backend.services.embeddings import embed_texts
 
 
 def main() -> int:

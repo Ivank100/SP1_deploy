@@ -186,8 +186,8 @@ The frontend will be available at `http://localhost:3000`
 - `POST /api/auth/register` - Register a new user
 - `POST /api/auth/login` - Login and get JWT token
 - `GET /api/auth/me` - Get current user info
-- `GET /api/courses` - List courses (filtered by user access)
-- `POST /api/courses` - Create a new course
+- `GET /api/courses/` - List courses (filtered by user access)
+- `POST /api/courses/` - Create a new course
 - `POST /api/lectures` - Upload a lecture
 - `GET /api/lectures/{id}` - Get lecture details
 - `POST /api/queries/{lecture_id}` - Ask a question about a lecture
@@ -198,15 +198,16 @@ The frontend will be available at `http://localhost:3000`
 
 ```
 SP1/
-├── src/
+├── backend/
 │   ├── api/              # FastAPI application
 │   │   ├── routes/       # API endpoints
 │   │   └── middleware/   # Auth middleware
-│   ├── db.py             # Database functions
-│   ├── rag_index.py      # Lecture ingestion
-│   ├── rag_query.py      # Q&A logic
-│   ├── audio_utils.py    # Audio transcription
-│   └── config.py         # Configuration
+│   ├── clients/          # External API clients
+│   ├── core/             # Shared config/auth
+│   ├── db/               # Database access layer
+│   ├── ingestion/        # Lecture ingestion pipeline
+│   ├── services/         # Business logic and generation
+│   └── utils/            # Cross-cutting helpers
 ├── frontend/             # Next.js frontend
 │   ├── app/              # Pages and routes
 │   └── lib/              # API client
@@ -224,7 +225,7 @@ SP1/
 python run_api.py
 
 # Or with uvicorn directly
-uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### Frontend Development
@@ -259,7 +260,7 @@ npm run dev
 ### Frontend Connection Issues
 
 - Ensure backend is running on port 8000
-- Check CORS settings in `src/api/main.py`
+- Check CORS settings in `backend/api/main.py`
 - Verify API base URL in `frontend/lib/api.ts`
 
 ## License

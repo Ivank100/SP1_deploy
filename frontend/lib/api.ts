@@ -75,6 +75,7 @@ export interface CitationSource {
 export interface QueryRequest {
   question: string;
   top_k?: number;
+  query_mode?: 'default' | 'key_points';
 }
 
 export interface QueryResponse {
@@ -340,7 +341,7 @@ export interface TokenResponse {
 export const apiClient = {
   // Courses
   async getCourses(): Promise<CourseListResponse> {
-    const response = await api.get<CourseListResponse>('/api/courses');
+    const response = await api.get<CourseListResponse>('/api/courses/');
     return response.data;
   },
   async joinCourse(code: string): Promise<{ course_id: number }> {
@@ -352,7 +353,7 @@ export const apiClient = {
     return response.data;
   },
   async createCourse(payload: CreateCoursePayload): Promise<Course> {
-    const response = await api.post<Course>('/api/courses', payload);
+    const response = await api.post<Course>('/api/courses/', payload);
     return response.data;
   },
   async deleteCourse(courseId: number): Promise<void> {
@@ -502,7 +503,7 @@ export const apiClient = {
 
   // Lectures
   async getLectures(courseId?: number): Promise<LectureListResponse> {
-    const response = await api.get<LectureListResponse>('/api/lectures', {
+    const response = await api.get<LectureListResponse>('/api/lectures/', {
       params: courseId ? { course_id: courseId } : undefined,
     });
     return response.data;
@@ -568,10 +569,15 @@ export const apiClient = {
   },
 
   // Queries
-  async queryLecture(lectureId: number, question: string, topK: number = 5): Promise<QueryResponse> {
+  async queryLecture(
+    lectureId: number,
+    question: string,
+    topK: number = 5,
+    queryMode?: QueryRequest['query_mode']
+  ): Promise<QueryResponse> {
     const response = await api.post<QueryResponse>(
       `/api/lectures/${lectureId}/query`,
-      { question, top_k: topK }
+      { question, top_k: topK, query_mode: queryMode }
     );
     return response.data;
   },

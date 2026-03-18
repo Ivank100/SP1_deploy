@@ -4,65 +4,31 @@ import { useState, useEffect, useRef, useCallback, useMemo, Dispatch, SetStateAc
 import { useParams, useRouter } from 'next/navigation';
 import {
   apiClient,
-  Lecture,
   QueryResponse,
   QueryHistoryItem,
   StudyMaterialsResponse,
-  CitationSource,
   TranscriptSegment,
   API_BASE_URL,
-  User,
   LectureAnalyticsResponse,
   LectureResource,
 } from '@/lib/api';
-
-/** Flashcard count range - keep in sync with apiClient.FLASHCARD_COUNT_MIN/MAX and backend */
-const FLASHCARD_COUNT_MIN = 1;
-const FLASHCARD_COUNT_MAX = 5;
 import Link from 'next/link';
 import Flashcards from '@/components/Flashcards';
 import AudioPlayer from '@/components/AudioPlayer';
 import SlideViewer, { SlideViewerRef } from '@/components/SlideViewer';
+import LecturePageHeader from '@/components/lectures/LecturePageHeader';
+import { describeSource } from '@/lib/formatters';
+import { useLecturePage } from '@/hooks/useLecturePage';
 
-const formatTimestamp = (seconds?: number | null) => {
-  if (seconds == null) return null;
-  const total = Math.max(Math.floor(seconds), 0);
-  const mins = Math.floor(total / 60);
-  const secs = total % 60;
-  const hours = Math.floor(mins / 60);
-  const minutes = mins % 60;
-  if (hours > 0) {
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs
-      .toString()
-      .padStart(2, '0')}`;
-  }
-  return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-};
-
-const describeSource = (source: CitationSource) => {
-  if (source.page_number != null) {
-    const isSlide = source.file_type === 'slides';
-    const label = isSlide ? 'slide' : 'page';
-    return `${label} ${source.page_number}`;
-  }
-  const start = formatTimestamp(source.timestamp_start ?? undefined);
-  const end = formatTimestamp(source.timestamp_end ?? undefined);
-  if (start && end && end !== start) {
-    return `${start}-${end}`;
-  }
-  if (start) {
-    return start;
-  }
-  return '';
-};
+/** Flashcard count range - keep in sync with apiClient.FLASHCARD_COUNT_MIN/MAX and backend */
+const FLASHCARD_COUNT_MIN = 1;
+const FLASHCARD_COUNT_MAX = 5;
 
 export default function LecturePage() {
   const params = useParams();
   const router = useRouter();
   const lectureId = parseInt(params.id as string);
-  const [lecture, setLecture] = useState<Lecture | null>(null);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { lecture, setLecture, currentUser, loading, courseName, loadLecture } = useLecturePage(lectureId, router);
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
   const [currentAnswer, setCurrentAnswer] = useState<QueryResponse | null>(null);
@@ -93,7 +59,6 @@ export default function LecturePage() {
   const [lectureAnalytics, setLectureAnalytics] = useState<LectureAnalyticsResponse | null>(null);
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
-  const [courseName, setCourseName] = useState<string | null>(null);
   const [showSummaryTool, setShowSummaryTool] = useState(true);
   const [showKeyConceptsTool, setShowKeyConceptsTool] = useState(true);
   const [showFlashcardsTool, setShowFlashcardsTool] = useState(true);
@@ -102,6 +67,13 @@ export default function LecturePage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const slideViewerRef = useRef<SlideViewerRef>(null);
   const replaceFileInputRef = useRef<HTMLInputElement>(null);
+
+  const detectLectureQueryMode = (value: string): 'key_points' | 'default' => {
+    const normalized = value.toLowerCase();
+    return /(key\s*points?|main\s*points?|important\s*points?|key\s*concepts?|main\s*concepts?)/.test(normalized)
+      ? 'key_points'
+      : 'default';
+  };
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -124,23 +96,6 @@ export default function LecturePage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lecture?.file_type, lecture?.has_transcript]);
-
-  const loadLecture = async () => {
-    try {
-      const data = await apiClient.getLecture(lectureId);
-      setLecture(data);
-      if (data.course_id) {
-        const courses = await apiClient.getCourses();
-        const matched = courses.courses.find((course) => course.id === data.course_id);
-        setCourseName(matched?.name || null);
-      }
-    } catch (error) {
-      console.error('Failed to load lecture:', error);
-      router.push('/');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const loadHistory = async () => {
     try {
@@ -181,22 +136,10 @@ export default function LecturePage() {
   }, [lectureId]);
 
   useEffect(() => {
-    // Check authentication
-    if (!apiClient.isAuthenticated()) {
-      router.push('/auth/login');
-      return;
-    }
-
-    const storedUser = apiClient.getStoredUser();
-    if (storedUser) {
-      setCurrentUser(storedUser);
-    }
-
-    loadLecture();
     loadHistory();
     loadMaterials();
     loadResources();
-  }, [lectureId, router, loadResources]);
+  }, [lectureId, loadResources]);
 
   const loadSlides = useCallback(async () => {
     if (lecture?.file_type !== 'slides') {
@@ -356,7 +299,7 @@ export default function LecturePage() {
     setCurrentAnswer(null);
 
     try {
-      const response = await apiClient.queryLecture(lectureId, question);
+      const response = await apiClient.queryLecture(lectureId, question, 5, detectLectureQueryMode(question));
       setCurrentAnswer(response);
       setQuestion('');
       await loadHistory(); // Refresh history so the new answer appears in history list
@@ -642,71 +585,15 @@ export default function LecturePage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-4">
-              {lecture?.course_id ? (
-                  <Link
-                  href={`/courses/${lecture.course_id}`}
-                  className="text-base font-medium text-gray-700 hover:text-primary-600"
-                >
-                  ← Back to Course
-                </Link>
-              ) : (
-              <Link
-                href="/"
-                className="text-base font-medium text-gray-700 hover:text-primary-600"
-              >
-                ← Back to Courses
-              </Link>
-              )}
-            </div>
-            {currentUser ? (
-              <div className="flex items-center space-x-3">
-                <div className="flex flex-col items-end">
-                <span className="text-base font-medium text-gray-900">{currentUser.email}</span>
-                <span className="text-sm text-gray-500 capitalize">{currentUser.role}</span>
-                </div>
-                <button
-                  onClick={() => {
-                    apiClient.logout();
-                    router.push('/auth/login');
-                  }}
-                  className="px-4 py-2 text-base font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-md transition-colors"
-                >
-                  Logout
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{lecture.original_name}</h1>
-              <p className="text-base text-gray-500">
-                {lecture.file_type === 'audio'
-                  ? 'Audio lecture'
-                  : lecture.file_type === 'slides'
-                  ? `${lecture.page_count} slides`
-                  : `${lecture.page_count} pages`}
-              </p>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="sticky top-16 z-10 bg-white/95 backdrop-blur border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 text-base text-gray-600 flex items-center gap-2 min-w-0">
-          <span className="font-medium text-gray-900 truncate max-w-[45%]">
-            {courseName || (lecture.course_id ? `Course ${lecture.course_id}` : 'Course')}
-          </span>
-          <span className="text-gray-400">→</span>
-          <span className="text-gray-700 truncate">{lecture.original_name}</span>
-        </div>
-      </div>
+      <LecturePageHeader
+        courseName={courseName}
+        currentUser={currentUser}
+        lecture={lecture}
+        onLogout={() => {
+          apiClient.logout();
+          router.push('/auth/login');
+        }}
+      />
 
       {/* Main Content */}
       <div className="flex-1 flex max-w-7xl mx-auto w-full">

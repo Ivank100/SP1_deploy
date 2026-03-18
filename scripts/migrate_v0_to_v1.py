@@ -1,4 +1,4 @@
-# src/migrate_v0_to_v1.py
+# backend/migrate_v0_to_v1.py
 """
 Migration script to convert v0 data (document_chunks) to v1 schema (lectures + chunks).
 
@@ -11,7 +11,7 @@ This script:
 Run this once after upgrading to v1 schema.
 """
 import sys
-from src.db.postgres import get_conn, init_schema
+from backend.db.postgres import get_conn, init_schema
 
 def migrate():
     """Migrate data from document_chunks to lectures + chunks."""
