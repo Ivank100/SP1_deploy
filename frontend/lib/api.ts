@@ -313,6 +313,12 @@ export interface TokenResponse {
 
 // API functions
 export const apiClient = {
+  storeUser(user: User): void {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('user', JSON.stringify(user));
+    }
+  },
+
   // Courses
   async getCourses(): Promise<CourseListResponse> {
     const response = await api.get<CourseListResponse>('/api/courses/');
@@ -639,7 +645,7 @@ export const apiClient = {
     const response = await api.post<TokenResponse>('/api/auth/register', { email, password, role });
     if (typeof window !== 'undefined') {
       localStorage.setItem('auth_token', response.data.access_token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
+      this.storeUser(response.data.user);
     }
     return response.data;
   },
@@ -648,13 +654,14 @@ export const apiClient = {
     const response = await api.post<TokenResponse>('/api/auth/login', { email, password });
     if (typeof window !== 'undefined') {
       localStorage.setItem('auth_token', response.data.access_token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
+      this.storeUser(response.data.user);
     }
     return response.data;
   },
 
   async getCurrentUser(): Promise<User> {
     const response = await api.get<User>('/api/auth/me');
+    this.storeUser(response.data);
     return response.data;
   },
 

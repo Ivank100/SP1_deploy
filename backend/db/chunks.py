@@ -106,22 +106,6 @@ def insert_chunks(lecture_id: int, chunks_payload: List[Any], embeddings: List[L
         conn.commit()
 
 
-def insert_chunks_legacy(doc_id: str, chunks: List[str], embeddings: List[List[float]]):
-    assert len(chunks) == len(embeddings)
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
-            vec_str = "[" + ",".join(f"{x:.6f}" for x in emb) + "]"
-            cur.execute(
-                """
-                INSERT INTO document_chunks (doc_id, chunk_index, content, embedding)
-                VALUES (%s, %s, %s, %s::vector)
-                """,
-                (doc_id, i, chunk, vec_str),
-            )
-        conn.commit()
-
-
 def search_similar(
     query_emb: List[float],
     top_k: int = 5,
@@ -256,19 +240,3 @@ def search_by_reference_patterns(
         params.extend([top_k, neighbor_window, neighbor_window, top_k * (neighbor_window * 2 + 1)])
         cur.execute(query, tuple(params))
         return cur.fetchall()
-
-
-def search_similar_legacy(query_emb: List[float], top_k: int = 5):
-    init_schema()
-    vec_str = "[" + ",".join(f"{x:.6f}" for x in query_emb) + "]"
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT content
-            FROM document_chunks
-            ORDER BY embedding <=> %s::vector
-            LIMIT %s
-            """,
-            (vec_str, top_k),
-        )
-        return [row[0] for row in cur.fetchall()]

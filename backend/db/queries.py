@@ -22,18 +22,3 @@ def insert_query(
             (lecture_id, course_id, question, answer, user_id, page_number),
         )
         conn.commit()
-
-
-def get_query_history(limit: int = 10):
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, question, answer, created_at
-            FROM query_history
-            ORDER BY created_at DESC
-            LIMIT %s
-            """,
-            (limit,),
-        )
-        return cur.fetchall()

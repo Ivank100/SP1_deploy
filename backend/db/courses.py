@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from .connection import generate_join_code, get_conn
 from .schema import init_schema
@@ -146,45 +146,6 @@ def is_instructor_for_course(user_id: int, course_id: int) -> bool:
             (course_id, user_id),
         )
         return cur.fetchone() is not None
-
-
-def get_course_instructors(course_id: int) -> List[Dict[str, Any]]:
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT ci.instructor_id, u.email, ci.assigned_at, ci.assigned_by
-            FROM course_instructors ci
-            JOIN users u ON ci.instructor_id = u.id
-            WHERE ci.course_id = %s
-            ORDER BY ci.assigned_at DESC
-            """,
-            (course_id,),
-        )
-        return [
-            {
-                "instructor_id": row[0],
-                "instructor_email": row[1],
-                "assigned_at": row[2].isoformat() if row[2] else None,
-                "assigned_by": row[3],
-            }
-            for row in cur.fetchall()
-        ]
-
-
-def remove_instructor_assignment(course_id: int, instructor_id: int) -> bool:
-    init_schema()
-    with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            DELETE FROM course_instructors
-            WHERE course_id = %s AND instructor_id = %s
-            """,
-            (course_id, instructor_id),
-        )
-        deleted = cur.rowcount > 0
-        conn.commit()
-        return deleted
 
 
 def delete_course_as_instructor(course_id: int, instructor_id: int) -> None:

@@ -1,15 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { apiClient, Course, User } from '@/lib/api';
+import { apiClient, Course } from '@/lib/api';
 import { filterVisibleCourses, groupCoursesBySemester, sortSemesterKeys } from '@/lib/courseGrouping';
+import { useAuthenticatedUser } from '@/hooks/useAuthenticatedUser';
 
 type RouterLike = {
   push: (href: string) => void;
 };
 
 export function useHomePage(router: RouterLike) {
-  const [user, setUser] = useState<User | null>(null);
+  const { user } = useAuthenticatedUser(router);
   const [courses, setCourses] = useState<Course[]>([]);
   const [hiddenCourseIds, setHiddenCourseIds] = useState<number[]>([]);
   const [hiddenTermKeys, setHiddenTermKeys] = useState<string[]>([]);
@@ -27,26 +28,6 @@ export function useHomePage(router: RouterLike) {
   const [expandedTerms, setExpandedTerms] = useState<Record<string, boolean>>({});
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [joinCode, setJoinCode] = useState('');
-
-  useEffect(() => {
-    if (!apiClient.isAuthenticated()) {
-      router.push('/auth/login');
-      return;
-    }
-
-    const storedUser = apiClient.getStoredUser();
-    if (storedUser) {
-      setUser(storedUser);
-    } else {
-      apiClient
-        .getCurrentUser()
-        .then(setUser)
-        .catch(() => {
-          apiClient.logout();
-          router.push('/auth/login');
-        });
-    }
-  }, [router]);
 
   const loadCourses = useCallback(async () => {
     setLoadingCourses(true);

@@ -38,10 +38,6 @@ def save_uploaded_file(source_path: str, original_name: str, subdir: Optional[st
     # Return path as string (relative to project root)
     return str(dest_path)
 
-def get_file_path(stored_path: str) -> Path:
-    """Get full Path object for a stored file path."""
-    return Path(stored_path)
-
 
 def delete_stored_file(stored_path: Optional[str]) -> bool:
     """

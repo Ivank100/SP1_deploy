@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { apiClient, Course, Lecture, LectureHealthResponse, QueryListResponse } from '@/lib/api';
+import { useAuthenticatedUser } from '@/hooks/useAuthenticatedUser';
 
 type RouterLike = {
   push: (href: string) => void;
 };
 
 export function useInstructorDashboardPage(router: RouterLike) {
-  const [user, setUser] = useState(apiClient.getStoredUser());
+  const { user } = useAuthenticatedUser(router);
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [lectures, setLectures] = useState<Lecture[]>([]);
@@ -20,13 +21,10 @@ export function useInstructorDashboardPage(router: RouterLike) {
   const [showAllRecurringTopics, setShowAllRecurringTopics] = useState(false);
 
   useEffect(() => {
-    if (!apiClient.isAuthenticated()) {
-      router.push('/auth/login');
-      return;
+    if (user) {
+      void loadCourses();
     }
-
-    void loadCourses();
-  }, [router]);
+  }, [user]);
 
   useEffect(() => {
     if (selectedCourseId) {
@@ -45,10 +43,6 @@ export function useInstructorDashboardPage(router: RouterLike) {
     try {
       const coursesData = await apiClient.getCourses();
       setCourses(coursesData.courses);
-      const currentUser = apiClient.getStoredUser();
-      if (currentUser) {
-        setUser(currentUser);
-      }
     } catch (error) {
       console.error('Failed to load courses:', error);
     }

@@ -55,11 +55,3 @@ UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 # Flashcard count range (user-selectable) - easy to modify
 FLASHCARD_COUNT_MIN = 1
 FLASHCARD_COUNT_MAX = 5
-
-# JWT Authentication - REQUIRED (no defaults for security)
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
-if not JWT_SECRET_KEY:
-    raise ValueError("JWT_SECRET_KEY environment variable is required. Generate a secure random key.")
-
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours

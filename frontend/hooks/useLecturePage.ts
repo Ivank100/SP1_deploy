@@ -1,15 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { apiClient, Lecture, User } from '@/lib/api';
+import { apiClient, Lecture } from '@/lib/api';
+import { useAuthenticatedUser } from '@/hooks/useAuthenticatedUser';
 
 type RouterLike = {
   push: (href: string) => void;
 };
 
 export function useLecturePage(lectureId: number, router: RouterLike) {
+  const { user: currentUser } = useAuthenticatedUser(router);
   const [lecture, setLecture] = useState<Lecture | null>(null);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [courseName, setCourseName] = useState<string | null>(null);
 
@@ -34,18 +35,10 @@ export function useLecturePage(lectureId: number, router: RouterLike) {
   }, [lectureId, router]);
 
   useEffect(() => {
-    if (!apiClient.isAuthenticated()) {
-      router.push('/auth/login');
-      return;
+    if (apiClient.isAuthenticated()) {
+      void loadLecture();
     }
-
-    const storedUser = apiClient.getStoredUser();
-    if (storedUser) {
-      setCurrentUser(storedUser);
-    }
-
-    void loadLecture();
-  }, [loadLecture, router]);
+  }, [loadLecture]);
 
   return {
     courseName,

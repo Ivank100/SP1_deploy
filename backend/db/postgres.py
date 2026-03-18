@@ -5,12 +5,10 @@ from .chunks import (
     get_chunks_for_page,
     get_chunks_for_lecture,
     insert_chunks,
-    insert_chunks_legacy,
     list_chunk_records,
     search_by_reference_patterns,
     search_by_keywords,
     search_similar,
-    search_similar_legacy,
     update_chunk_embeddings,
 )
 from .connection import (
@@ -27,12 +25,10 @@ from .courses import (
     delete_course_as_instructor,
     enroll_student_by_code,
     get_course,
-    get_course_instructors,
     get_instructor_assigned_course_ids,
     get_instructor_visible_course_ids,
     is_instructor_for_course,
     list_courses,
-    remove_instructor_assignment,
 )
 from .flashcards import (
     create_flashcard_set,
@@ -40,9 +36,7 @@ from .flashcards import (
     get_latest_flashcard_set,
     get_previous_flashcard_questions,
     insert_flashcards,
-    list_flashcards,
     list_flashcards_by_set,
-    replace_flashcards,
 )
 from .lectures import (
     add_lecture_resource,
@@ -63,7 +57,7 @@ from .lectures import (
     update_lecture_name,
     update_lecture_status,
 )
-from .queries import get_query_history, insert_query
+from .queries import insert_query
 from .schema import _get_or_create_default_course, ensure_default_course, init_schema
 from .upload_requests import (
     delete_upload_request,

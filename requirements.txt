@@ -4,7 +4,6 @@ docling
 requests
 sentence-transformers
 scikit-learn
-python-jose[cryptography]
 python-multipart
 email-validator
 openai-whisper

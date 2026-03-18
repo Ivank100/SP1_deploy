@@ -1,14 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { apiClient, Course, User } from '@/lib/api';
+import { apiClient, Course } from '@/lib/api';
+import { useAuthenticatedUser } from '@/hooks/useAuthenticatedUser';
 
 type RouterLike = {
   push: (href: string) => void;
 };
 
 export function useCoursePage(courseId: number, router: RouterLike) {
-  const [user, setUser] = useState<User | null>(null);
+  const { user } = useAuthenticatedUser(router);
   const [course, setCourse] = useState<Course | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -31,27 +32,6 @@ export function useCoursePage(courseId: number, router: RouterLike) {
       setRefreshing(false);
     }
   }, [courseId, router]);
-
-  useEffect(() => {
-    if (!apiClient.isAuthenticated()) {
-      router.push('/auth/login');
-      return;
-    }
-
-    const storedUser = apiClient.getStoredUser();
-    if (storedUser) {
-      setUser(storedUser);
-      return;
-    }
-
-    apiClient
-      .getCurrentUser()
-      .then(setUser)
-      .catch(() => {
-        apiClient.logout();
-        router.push('/auth/login');
-      });
-  }, [router]);
 
   useEffect(() => {
     if (user && courseId) {
