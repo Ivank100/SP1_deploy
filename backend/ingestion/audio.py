@@ -13,7 +13,7 @@ try:
 except ImportError:
     WHISPER_AVAILABLE = False
 
-from ..core.config import OPENAI_API_KEY, OPENAI_BASE_URL, WHISPER_MODEL
+from ..core.config import OPENAI_API_KEY, OPENAI_BASE_URL, WHISPER_MODEL, WHISPER_USE_API
 
 
 class TranscriptionError(RuntimeError):
@@ -31,6 +31,12 @@ def transcribe_audio(file_path: str) -> Dict[str, Any]:
     if not resolved_path.exists():
         raise FileNotFoundError(f"Audio file not found: {resolved_path}")
 
+    # Use API directly if forced via env var
+    if WHISPER_USE_API:
+        if OPENAI_API_KEY:
+            return _transcribe_with_api(resolved_path)
+        raise TranscriptionError("WHISPER_USE_API is set but OPENAI_API_KEY is missing")
+
     # Try local Whisper first (free)
     if WHISPER_AVAILABLE:
         try:
@@ -40,7 +46,7 @@ def transcribe_audio(file_path: str) -> Dict[str, Any]:
             if OPENAI_API_KEY:
                 return _transcribe_with_api(resolved_path)
             raise TranscriptionError(f"Local Whisper failed: {e}")
-    
+
     # Fall back to API if local Whisper not available
     if OPENAI_API_KEY:
         return _transcribe_with_api(resolved_path)
