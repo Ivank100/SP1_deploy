@@ -32,6 +32,7 @@ def transcribe_audio(file_path: str) -> Dict[str, Any]:
         raise FileNotFoundError(f"Audio file not found: {resolved_path}")
 
     # Use API directly if forced via env var
+    print(f"[DEBUG] WHISPER_USE_API={WHISPER_USE_API}")
     if WHISPER_USE_API:
         if OPENAI_API_KEY:
             return _transcribe_with_api(resolved_path)
