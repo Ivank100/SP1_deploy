@@ -32,7 +32,7 @@ if EMBEDDING_MODEL is not None:
 
 # Whisper API settings. The same OpenAI key/base URL above are reused if local Whisper is unavailable.
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "whisper-1")
-WHISPER_USE_API = os.getenv("WHISPER_USE_API", "false").lower() == "true"
+WHISPER_USE_API = os.getenv("WHISPER_USE_API", "true").lower() == "true"
 
 # Database Configuration - REQUIRED (no defaults for security)
 PG_HOST = os.getenv("POSTGRES_HOST")
